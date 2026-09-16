@@ -1,0 +1,130 @@
+name: Community Custom Desktop Release
+
+# Builds unsigned desktop installers for the customized Community branch and
+# attaches them to a GitHub Release.
+#
+# Triggered by a version tag (`v5.3.1`, `v5.3.0-beta.1`) or manually from the
+# Actions tab. Every runtime, including the JDK, is provisioned on the GitHub
+# runner, so nothing has to be installed locally.
+#
+# The version must be major.minor.patch or major.minor.patch-beta.N; the native
+# installers reject anything else.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without the v prefix, e.g. 5.3.1 or 5.3.0-beta.1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: community-custom-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: mac
+            artifact: macos-arm64
+          - os: windows-latest
+            target: win
+            artifact: windows-x64
+          - os: ubuntu-22.04
+            target: linux
+            artifact: linux-x64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+          cache-dependency-path: chat2db-community-client/yarn.lock
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${{ inputs.version || github.ref_name }}"
+          echo "value=${raw#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Windows packaging tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build desktop package
+        shell: bash
+        env:
+          COMMUNITY_SOURCE_DIR: ${{ github.workspace }}
+          # No Developer ID certificate is available here, so the DMG is produced unsigned.
+          SKIP_MACOS_SIGNING: 'true'
+        run: |
+          set -euo pipefail
+          bash script/package/package-community-jcef.sh \
+            "${{ steps.version.outputs.value }}" \
+            "${{ matrix.target }}"
+
+      - name: Wrap Windows installer
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash script/package/wrap_win_installer_community.sh "${{ steps.version.outputs.value }}"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            jpackage/output/*.dmg
+            jpackage/output/*.msi
+            jpackage/output/*.exe
+            jpackage/output/*.deb
+            jpackage/output/*.rpm
+            jpackage/output/*.AppImage
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/**/*
+          generate_release_notes: true
+          # Unsigned builds: keep them marked as a prerelease so nobody mistakes
+          # them for an official signed distribution.
+          prerelease: true

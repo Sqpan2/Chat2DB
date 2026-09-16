@@ -16,6 +16,7 @@ Targets:
 Environment:
   SKIP_BACKEND=true             Skip Maven backend build.
   SKIP_FRONTEND=true            Skip frontend build.
+  SKIP_MACOS_SIGNING=true       Produce an unsigned macOS DMG without a Developer ID certificate.
   COMMUNITY_SOURCE_DIR          Source checkout (defaults to this repository).
   COMMUNITY_RELEASE_EPOCH       Release sequence (positive for published updates).
   COMMUNITY_UPDATE_KEY_ID       Update signing public key identifier.
@@ -379,8 +380,10 @@ case "${TARGET}" in
     ;;
   mac)
     prepare_macos_runtime
-    bash "${SCRIPT_DIR}/sign-macos-native-libraries.sh" \
-      "${JPACKAGE_INPUT_DIR}/mac"
+    if [ "${SKIP_MACOS_SIGNING:-false}" != "true" ]; then
+      bash "${SCRIPT_DIR}/sign-macos-native-libraries.sh" \
+        "${JPACKAGE_INPUT_DIR}/mac"
+    fi
     machine_arch=$(uname -m)
     if [ "${machine_arch}" = "arm64" ] || [ "${machine_arch}" = "aarch64" ]; then
       arch_suffix="arm64"

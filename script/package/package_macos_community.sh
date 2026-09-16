@@ -94,20 +94,29 @@ remove_existing_signatures() {
 package_application() {
     jpackage --version
     file "$(which jpackage)"
-    security find-identity -v -p codesigning || true
 
-    local signing_identity="${MAC_SIGNING_IDENTITY}"
-    if [ -z "${signing_identity}" ]; then
-        signing_identity=$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')
-    fi
-    if [ -z "${signing_identity}" ]; then
-        echo "Error: no Developer ID Application signing identity found in keychain" >&2
+    local signing_identity=""
+    if [ "${SKIP_MACOS_SIGNING:-false}" = "true" ]; then
+        # Unsigned build: jpackage runs without any signing arguments, so no
+        # Developer ID certificate is required. The DMG still has to be opened
+        # with a right click (or `xattr -cr`) on the target machine.
+        echo "[warn] SKIP_MACOS_SIGNING=true, producing an unsigned DMG" >&2
+    else
         security find-identity -v -p codesigning || true
-        exit 1
-    fi
-    if ! security find-identity -v -p codesigning | grep -F "${signing_identity}" >/dev/null; then
-        echo "Error: macOS signing identity not found: ${signing_identity}" >&2
-        exit 1
+
+        signing_identity="${MAC_SIGNING_IDENTITY}"
+        if [ -z "${signing_identity}" ]; then
+            signing_identity=$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')
+        fi
+        if [ -z "${signing_identity}" ]; then
+            echo "Error: no Developer ID Application signing identity found in keychain" >&2
+            security find-identity -v -p codesigning || true
+            exit 1
+        fi
+        if ! security find-identity -v -p codesigning | grep -F "${signing_identity}" >/dev/null; then
+            echo "Error: macOS signing identity not found: ${signing_identity}" >&2
+            exit 1
+        fi
     fi
 
     local args=(
@@ -122,10 +131,15 @@ package_application() {
         "--dest" "${OUTPUT_DIR}"
         "--runtime-image" "${MAC_RUNTIME_IMAGE}"
         "--file-associations" "${ASSOCIATIONS_FILE}"
-        "--mac-sign"
-        "--mac-signing-key-user-name" "${signing_identity}"
         "--resource-dir" "${RESOURCE_DIR}"
     )
+
+    if [ -n "${signing_identity}" ]; then
+        args+=(
+            "--mac-sign"
+            "--mac-signing-key-user-name" "${signing_identity}"
+        )
+    fi
 
     if [ -n "${ICON_FILE}" ]; then
         args+=("--icon" "${ICON_FILE}")
@@ -309,14 +323,16 @@ validate_packaged_dmg() {
     done
     rm -f "${jar_index}"
 
-    if ! codesign --verify --deep --strict --verbose=2 "${app_dir}"; then
+    if [ "${SKIP_MACOS_SIGNING:-false}" = "true" ]; then
+        echo "[warn] SKIP_MACOS_SIGNING=true, skipping code-signature verification" >&2
+    elif ! codesign --verify --deep --strict --verbose=2 "${app_dir}"; then
         cleanup_mount
         echo "Error: packaged app failed strict code-signature verification" >&2
         exit 1
     fi
 
     cleanup_mount
-    echo "[check] packaged DMG metadata, resources, and strict app signature are valid"
+    echo "[check] packaged DMG metadata, resources, and app signature check completed"
 }
 
 validate_resources
