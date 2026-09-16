@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import dayjs from 'dayjs';
 import i18n from '@/i18n';
 import { Input, Modal } from 'antd';
-import { ChevronRight, Trash2 } from 'lucide-react';
-import { IconfontSvg } from '@chat2db/ui';
+import { ChevronRight, Download, Trash2, Upload } from 'lucide-react';
+import { IconfontSvg, staticMessage } from '@chat2db/ui';
 import PortalContextMenu from '@/components/ContextMenu/PortalContextMenu';
 import type { ContextMenuAction, ContextMenuEntry, ContextMenuIntent } from '@/components/ContextMenu/core';
 import LoadingContent from '@/components/Loading/LoadingContent';
 import historyServer from '@/service/history';
-import { ConsoleOpenedStatus, getDatabaseInfo } from '@/constants';
+import { ConsoleOpenedStatus, ConsoleStatus, getDatabaseInfo, WorkspaceTabType } from '@/constants';
 import { IConsole } from '@/typings';
 import { useStyles } from './style';
 import { useWorkspaceStore } from '@/store/workspace';
@@ -15,6 +16,14 @@ import MenuLabel from '@/components/MenuLabel';
 import { emitSavedConsoleRecordUpdated } from '@/utils/savedConsoleEvents';
 import PanelToolbar from '@/components/PanelToolbar';
 import WorkspaceHeaderSearch from '../WorkspaceHeaderSearch';
+import { saveFileToDesktop } from '@/utils/file';
+import {
+  buildSavedConsoleExportFile,
+  parseSavedConsoleExportFile,
+  resolveImportedConsoleName,
+  SavedConsoleImportError,
+  type SavedConsoleExportItem,
+} from './savedConsoleTransfer';
 
 type SavedConsoleTreeNodeType = 'dataSource' | 'database' | 'schema' | 'console';
 
@@ -160,6 +169,8 @@ const SaveList = ({ headerLeading }: SaveListProps) => {
   const removeSavedConsole = useWorkspaceStore((state) => state.removeSavedConsole);
   const [editData, setEditData] = useState<IConsole | null>(null);
   const [contextMenu, setContextMenu] = useState<SavedConsoleContextIntent | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const consoleTree = useMemo(() => createConsoleTree(consoleList), [consoleList]);
   const filteredTree = useMemo(() => filterTree(consoleTree, searchKeyword), [consoleTree, searchKeyword]);
@@ -177,6 +188,103 @@ const SaveList = ({ headerLeading }: SaveListProps) => {
   useEffect(() => {
     getSavedConsoleList();
   }, []);
+
+  // Export every saved console into a single JSON file.
+  async function handleExportSavedConsoles() {
+    const consoles = consoleList || [];
+    if (!consoles.length) {
+      staticMessage.warning(i18n('workspace.savedConsole.export.empty'));
+      return;
+    }
+
+    const exportFile = buildSavedConsoleExportFile(consoles, new Date().toISOString());
+
+    try {
+      const savedFile = await saveFileToDesktop({
+        fileName: `chat2db_saved_consoles_${dayjs().format('YYYYMMDDHHmmss')}`,
+        fileContent: JSON.stringify(exportFile, null, 2),
+        fileType: 'json',
+      });
+      // A null result means the user dismissed the save dialog.
+      if (!savedFile) {
+        return;
+      }
+      staticMessage.success(i18n('workspace.savedConsole.export.success', consoles.length));
+    } catch {
+      staticMessage.error(i18n('workspace.savedConsole.export.failed'));
+    }
+  }
+
+  function handleChooseImportFile() {
+    importFileInputRef.current?.click();
+  }
+
+  // Imported records are always created as new consoles, so existing ones are never overwritten.
+  async function handleImportSavedConsoles(file: File) {
+    let importedItems: SavedConsoleExportItem[];
+    try {
+      importedItems = parseSavedConsoleExportFile(await file.text());
+    } catch (error) {
+      staticMessage.error(
+        i18n(
+          error instanceof SavedConsoleImportError
+            ? 'workspace.savedConsole.import.invalidFile'
+            : 'workspace.savedConsole.import.failed',
+        ),
+      );
+      return;
+    }
+
+    const existingNames = new Set((consoleList || []).map((item) => item.name));
+    const importedNames = new Set<string>();
+    let createdCount = 0;
+
+    setImporting(true);
+    try {
+      for (const item of importedItems) {
+        const name = resolveImportedConsoleName(item.name, existingNames, importedNames);
+        importedNames.add(name);
+
+        try {
+          await historyServer.createConsole({
+            name,
+            nameCustomized: true,
+            ddl: item.ddl || '',
+            status: ConsoleStatus.DRAFT,
+            operationType: WorkspaceTabType.CONSOLE,
+            type: item.type,
+            dataSourceId: item.dataSourceId,
+            databaseName: item.databaseName,
+            schemaName: item.schemaName,
+          });
+          createdCount += 1;
+        } catch {
+          // Skip the rejected record and keep importing the remaining ones.
+        }
+      }
+    } finally {
+      setImporting(false);
+    }
+
+    if (!createdCount) {
+      staticMessage.error(i18n('workspace.savedConsole.import.failed'));
+      return;
+    }
+
+    getSavedConsoleList();
+    staticMessage.success(i18n('workspace.savedConsole.import.success', createdCount));
+  }
+
+  async function handleImportFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Reset the input so picking the same file again still fires a change event.
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    await handleImportSavedConsoles(file);
+  }
 
   useEffect(() => {
     const groupKeys = collectGroupKeys(consoleTree);
@@ -420,11 +528,38 @@ const SaveList = ({ headerLeading }: SaveListProps) => {
         <PanelToolbar
           leading={headerLeading ?? <div>{i18n('workspace.title.savedConsole')}</div>}
           trailing={
-            <WorkspaceHeaderSearch
-              active={false}
-              value={searchKeyword}
-              onChange={setSearchKeyword}
-            />
+            <div className={styles.toolbarTrailing}>
+              <WorkspaceHeaderSearch
+                active={false}
+                value={searchKeyword}
+                onChange={setSearchKeyword}
+              />
+              <button
+                type="button"
+                className={styles.toolbarButton}
+                title={i18n('workspace.savedConsole.export.label')}
+                disabled={importing}
+                onClick={() => void handleExportSavedConsoles()}
+              >
+                <Download size={16} />
+              </button>
+              <button
+                type="button"
+                className={styles.toolbarButton}
+                title={i18n('workspace.savedConsole.import.label')}
+                disabled={importing}
+                onClick={handleChooseImportFile}
+              >
+                <Upload size={16} />
+              </button>
+              <input
+                ref={importFileInputRef}
+                className={styles.importFileInput}
+                type="file"
+                accept=".json,application/json"
+                onChange={handleImportFileChange}
+              />
+            </div>
           }
         />
         <div className={styles.saveBoxList}>

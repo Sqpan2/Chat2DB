@@ -518,6 +518,15 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
           action(SQLOptType.VIEW_TABLE_DDL, tableIdentifier);
         }
       }
+
+      // Double clicking a table name locates it in the object tree and expands its columns.
+      if (e.event.detail === 2 && e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT) {
+        const tableIdentifier = getTableIdentifierAtPosition(e.target.position);
+        if (tableIdentifier) {
+          e.event.preventDefault();
+          action(SQLOptType.LOCATE_TABLE_IN_TREE, tableIdentifier);
+        }
+      }
     };
 
     // Update decorations.

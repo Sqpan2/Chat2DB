@@ -1,4 +1,5 @@
 import { createStyles } from 'antd-style';
+import { PANEL_TOOLBAR_BUTTON_SIZE } from '@/components/PanelToolbar';
 
 export const useStyles = createStyles(({ css, token }) => {
   return {
@@ -7,6 +8,38 @@ export const useStyles = createStyles(({ css, token }) => {
       display: flex;
       flex-direction: column;
       overflow: hidden;
+    `,
+    toolbarTrailing: css`
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    `,
+    toolbarButton: css`
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: ${PANEL_TOOLBAR_BUTTON_SIZE.boxSize}px;
+      height: ${PANEL_TOOLBAR_BUTTON_SIZE.boxSize}px;
+      padding: 0;
+      border: none;
+      border-radius: ${PANEL_TOOLBAR_BUTTON_SIZE.borderRadius}px;
+      background: transparent;
+      color: ${token.colorTextTertiary};
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background: ${token.colorFillSecondary};
+        color: ${token.colorTextSecondary};
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+    `,
+    importFileInput: css`
+      display: none;
     `,
     saveBoxList: css`
       flex: 1;

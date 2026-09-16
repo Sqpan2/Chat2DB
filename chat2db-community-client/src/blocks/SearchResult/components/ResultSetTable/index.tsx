@@ -461,6 +461,8 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
         customOptions={{ showFrozenColumnDivider: frozenColumnFields.length > 0 }}
         options={{
           ...RESULT_TABLE_CONTENT_LAYOUT_OPTIONS,
+          // A single click enters edit mode; double click keeps working as before.
+          editCellTrigger: ['click', 'doubleclick'],
           rowSeriesNumber: {
             title: undefined,
             width: 'auto' as any,

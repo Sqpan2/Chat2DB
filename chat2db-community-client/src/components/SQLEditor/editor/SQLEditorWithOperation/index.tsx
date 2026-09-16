@@ -418,6 +418,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       case SQLOptType.VIEW_TABLE_DDL:
         void handleViewTableDDL(params);
         break;
+      case SQLOptType.LOCATE_TABLE_IN_TREE:
+        void handleLocateTableInTree(params);
+        break;
       case SQLOptType.EDIT_TABLE:
         handleEditTable(contextTableIdentifier);
         break;
@@ -601,6 +604,16 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     useAIStore.getState().setShowPanel(false);
     useWorkspaceStore.getState().setCurrentWorkspaceExtend('info');
     useWorkspaceStore.getState().togglePanelRight(true);
+  };
+
+  // Double clicking a table name only locates it in the object tree and reveals its columns.
+  const handleLocateTableInTree = async (tableIdentifier?: EditorTableIdentifier | null) => {
+    const tableNode = createTableTreeNode(tableIdentifier);
+    if (!tableNode) {
+      return;
+    }
+
+    await selectTableTreeNode(tableNode, { expandColumns: true });
   };
 
   const handleEditTable = (tableIdentifier?: EditorTableIdentifier | null) => {
@@ -1312,7 +1325,7 @@ const createTableTreeNode = (tableIdentifier?: EditorTableIdentifier | null): Tr
   };
 };
 
-const selectTableTreeNode = async (tableNode: TreeNodeData) => {
+const selectTableTreeNode = async (tableNode: TreeNodeData, options?: { expandColumns?: boolean }) => {
   const { dataSourceId, databaseType, databaseName, schemaName, tableName } = tableNode.extraParams;
   const candidateTreeNodeTypes = getCandidateTreeNodeTypes(tableNode.treeNodeType);
   const loadedPathKeys: React.Key[] = [];
@@ -1347,13 +1360,45 @@ const selectTableTreeNode = async (tableNode: TreeNodeData) => {
   const selectedNode = loadedTableNode;
   ensureWorkspaceLeftPanelVisible();
   const treeStore = useTreeStore.getState();
-  const expandedKeys = Array.from(new Set([...treeStore.expandedKeys, ...loadedPathKeys]));
+  const expandedKeySet = new Set<React.Key>([...treeStore.expandedKeys, ...loadedPathKeys]);
+
+  if (options?.expandColumns) {
+    const columnsTreeNodeKey = createColumnsTreeNodeKey(selectedNode);
+    if (columnsTreeNodeKey) {
+      expandedKeySet.add(columnsTreeNodeKey);
+    }
+  }
+
+  const expandedKeys = Array.from(expandedKeySet);
 
   treeStore.setExpandedKeys(expandedKeys);
   treeStore.setCurrentTreeNode(selectedNode);
   treeStore.setSelectedKeys([selectedNode.key]);
   treeStore.setScrollTargetKey(selectedNode.key);
   return true;
+};
+
+/**
+ * Resolve the key of the `columns` child node, which Table and View nodes both expose.
+ */
+const createColumnsTreeNodeKey = (tableNode: TreeNodeData): string | null => {
+  const columnsTreeNodeType =
+    tableNode.treeNodeType === TreeNodeType.VIEW ? TreeNodeType.VIEWCOLUMNS : TreeNodeType.COLUMNS;
+
+  if (tableNode.treeNodeType !== TreeNodeType.TABLE && tableNode.treeNodeType !== TreeNodeType.VIEW) {
+    return null;
+  }
+
+  const { dataSourceId, databaseName, schemaName, tableName } = tableNode.extraParams || {};
+
+  return (
+    treeConfig[columnsTreeNodeType].createTreeNodeKey?.({
+      dataSourceId,
+      databaseName,
+      schemaName,
+      tableName,
+    }) || null
+  );
 };
 
 const loadDatabaseObjectTreePath = async (params: {
