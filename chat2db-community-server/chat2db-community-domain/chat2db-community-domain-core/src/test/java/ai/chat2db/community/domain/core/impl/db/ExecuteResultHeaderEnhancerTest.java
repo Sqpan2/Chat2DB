@@ -29,6 +29,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -218,6 +219,67 @@ class ExecuteResultHeaderEnhancerTest {
         assertEquals(List.of(), header.getEditorOptions());
     }
 
+    @Test
+    void enrichesFieldCommentForNonEditableResultSet() {
+        AtomicInteger columnQueries = new AtomicInteger();
+        AtomicReference<DbTableQueryRequest> capturedRequest = new AtomicReference<>();
+        IDbTableService tableService = tableService(List.of(
+                TableColumn.builder().name("video_id").columnType("BIGINT").comment("视频ID").build()),
+                columnQueries, capturedRequest);
+        putContext(new TestMetaData(column -> ResultSetEditorMetadata.builder()
+                .editorType(ResultSetEditorTypeEnum.TEXT.getCode())
+                .editorOptions(List.of())
+                .build()));
+
+        // 多条语句被整段下发时，buildCanEditResult 解析不出表名，canEdit 与结果集级表名都是空的，
+        // 此时仍必须按 JDBC 元数据里每列各自的表名补全字段注释。
+        Header header = Header.builder()
+                .name("video_id")
+                .columnName("video_id")
+                .tableName("house_task")
+                .build();
+        ExecuteResponse response = ExecuteResponse.builder()
+                .success(true)
+                .canEdit(false)
+                .headerList(List.of(header))
+                .build();
+        enhance(tableService, response);
+
+        assertEquals(1, columnQueries.get());
+        assertEquals("house_task", capturedRequest.get().getTableName());
+        assertEquals("视频ID", header.getComment());
+        assertEquals("BIGINT", header.getColumnType());
+    }
+
+    @Test
+    void enrichesEachHeaderFromItsOwnTableWhenResultSetHasNoTableName() {
+        AtomicInteger columnQueries = new AtomicInteger();
+        List<DbTableQueryRequest> capturedRequests = new ArrayList<>();
+        IDbTableService tableService = tableServiceByTable(Map.of(
+                "house_task", List.of(TableColumn.builder().name("id").columnType("BIGINT").comment("房源主键").build()),
+                "video_base_info", List.of(TableColumn.builder().name("id").columnType("BIGINT").comment("视频主键").build())),
+                columnQueries, capturedRequests);
+        putContext(new TestMetaData(column -> ResultSetEditorMetadata.builder()
+                .editorType(ResultSetEditorTypeEnum.TEXT.getCode())
+                .editorOptions(List.of())
+                .build()));
+
+        Header houseId = Header.builder().name("id").columnName("id").tableName("house_task").build();
+        Header videoId = Header.builder().name("id").columnName("id").tableName("video_base_info").build();
+        ExecuteResponse response = ExecuteResponse.builder()
+                .success(true)
+                .canEdit(false)
+                .headerList(List.of(houseId, videoId))
+                .build();
+        enhance(tableService, response);
+
+        assertEquals(2, columnQueries.get());
+        assertEquals(List.of("house_task", "video_base_info"),
+                capturedRequests.stream().map(DbTableQueryRequest::getTableName).toList());
+        assertEquals("房源主键", houseId.getComment());
+        assertEquals("视频主键", videoId.getComment());
+    }
+
     private void putContext(IDbMetaData metaData) {
         previousPlugin = Chat2DBContext.PLUGIN_MAP.put(TEST_DB_TYPE, new TestPlugin(metaData));
         ConnectInfo connectInfo = new ConnectInfo();
@@ -242,6 +304,24 @@ class ExecuteResultHeaderEnhancerTest {
                         queryCount.incrementAndGet();
                         capturedRequest.set((DbTableQueryRequest) args[0]);
                         return columns;
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    private IDbTableService tableServiceByTable(Map<String, List<TableColumn>> columnsByTable,
+                                                AtomicInteger queryCount,
+                                                List<DbTableQueryRequest> capturedRequests) {
+        return (IDbTableService) Proxy.newProxyInstance(
+                IDbTableService.class.getClassLoader(),
+                new Class<?>[]{IDbTableService.class},
+                (proxy, method, args) -> {
+                    if ("queryColumns".equals(method.getName())) {
+                        queryCount.incrementAndGet();
+                        DbTableQueryRequest request = (DbTableQueryRequest) args[0];
+                        capturedRequests.add(request);
+                        String tableName = request.getTableName();
+                        return tableName == null ? List.of() : columnsByTable.getOrDefault(tableName, List.of());
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });
