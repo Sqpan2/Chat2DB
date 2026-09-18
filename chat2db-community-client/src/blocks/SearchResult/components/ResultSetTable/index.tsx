@@ -8,6 +8,7 @@ import {
   useCallback,
   useRef,
   useState,
+  KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { useStyles } from './style';
 import CanvasTable from '@/blocks/CanvasTable';
@@ -36,6 +37,13 @@ import {
   getResultFieldAtTableColumn,
 } from './columnState';
 import { resolveResultSelectionActiveCell, ResultSelectionCause } from './selectionState';
+import {
+  canFlushBatchFill,
+  collectBatchFillRows,
+  isPrintableEditKey,
+  resolveEditableCell,
+  type ResultBatchFill,
+} from './utils/keyboardEdit';
 import { RESULT_TABLE_CONTENT_LAYOUT_OPTIONS } from './layoutOptions';
 import { resetResultTableLayout, updateResultTableRowExpansion } from './rowHeight';
 import { hasActiveResultEditorChange } from '../ResultSet/resultEditActions';
@@ -87,6 +95,15 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [columnVisibilityOpen, setColumnVisibilityOpen] = useState(false);
   const interactionRevisionRef = useRef(0);
+  // Rows waiting to receive the value committed in the cell being edited: set when a
+  // keystroke starts an edit over a multi-cell selection, consumed once it commits.
+  const pendingFillRef = useRef<ResultBatchFill | null>(null);
+  // Set while a fill writes its own cells, so those writes are not mistaken for the hand
+  // edit that triggered them.
+  const isBatchFillingRef = useRef(false);
+  // Installed by the table listener effect. The keydown handler completes a fill whose
+  // commit fired no change event, and only that effect knows how to write the cells.
+  const runBatchFillRef = useRef<(fill: ResultBatchFill, value: unknown) => void>(() => {});
   const { customFontSize, showFieldType, showFieldComment } = useGlobalStore((state) => ({
     customFontSize: state.baseSetting.customFontSize ?? 13,
     showFieldType: state.dataTableSettings.showFieldType ?? true,
@@ -298,6 +315,11 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
   }, [activeFilterCount]);
 
   useEffect(() => {
+    // A fill armed against the previous table must never reach a rebuilt one.
+    pendingFillRef.current = null;
+  }, [tableInstance]);
+
+  useEffect(() => {
     if (!tableInstance || !operationRecordUtils) return;
     // monitors the right mouse click on a cell
     const { id: onContextmenuCellId } = onContextmenuCell({
@@ -311,16 +333,60 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
       onFreezeColumns: handleFreezeColumns,
       onUnfreezeAllColumns: handleUnfreezeAllColumns,
     });
+    // Fills the rest of a multi-cell selection once the edited cell commits. The writes
+    // go through changeCellValue, so every filled cell is recorded exactly like a hand
+    // edit and reaches the generated UPDATE statement.
+    const fillPending = (fill: ResultBatchFill, value: unknown) => {
+      isBatchFillingRef.current = true;
+      try {
+        fill.rows.forEach((row) => {
+          tableInstance.changeCellValue(fill.col, row, value as string | number, true);
+        });
+      } finally {
+        isBatchFillingRef.current = false;
+      }
+    };
+    runBatchFillRef.current = fillPending;
+    // Registered before onChangeCellValue, which rewrites a frozen or large-value cell
+    // during the very same dispatch. Listening second would read that rewrite as the
+    // commit and spread the cell's old value over the selection.
+    const onBatchFillId = tableInstance.on('change_cell_value', (event) => {
+      if (isBatchFillingRef.current) {
+        return;
+      }
+      const pending = pendingFillRef.current;
+      if (!pending) {
+        return;
+      }
+      // The cell being edited reports first, so an event from any other cell means this
+      // fill was superseded by a later edit and must not fire on top of it.
+      pendingFillRef.current = null;
+      if (event.col !== pending.col || event.row !== pending.row) {
+        return;
+      }
+      fillPending(pending, event.changedValue);
+    });
     // monitors cell value changes
     const onChangeCellValueId = onChangeCellValue(
       tableInstance,
       operationRecordUtils.handleCellValueChange,
       new Set(frozenColumnFields),
     );
+    // Moving the selection abandons an edit that never committed. An editor that is
+    // still open keeps its fill armed: committing with Tab moves the selection before
+    // the editor closes, and that commit must still fill.
+    const onSelectionResetId = tableInstance.on('selected_cell', () => {
+      if (!isBatchFillingRef.current && !tableInstance.editorManager?.editingEditor) {
+        pendingFillRef.current = null;
+      }
+    });
     // monitors copied data
     return () => {
       tableInstance?.off(onContextmenuCellId);
       tableInstance?.off(onChangeCellValueId);
+      tableInstance?.off(onBatchFillId);
+      tableInstance?.off(onSelectionResetId);
+      runBatchFillRef.current = () => {};
     };
   }, [
     frozenColumnFields,
@@ -438,9 +504,72 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
     interactionRevisionRef.current += 1;
   }, []);
 
-  const handleTableKeyDown = useCallback(() => {
-    interactionRevisionRef.current += 1;
-  }, []);
+  const handleTableKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      interactionRevisionRef.current += 1;
+      if (event.key === 'Escape') {
+        // The editor cancels without committing, so no fill may stay armed.
+        pendingFillRef.current = null;
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        const pending = pendingFillRef.current;
+        if (pending && tableInstance) {
+          // VTable commits these keys itself, but a commit whose value did not change
+          // fires no change_cell_value and would leave the rest of the selection as it
+          // was. Deferred so it sees the result of VTable's own handling of the key.
+          setTimeout(() => {
+            if (pendingFillRef.current !== pending) {
+              // The commit did change the value and already filled the selection.
+              return;
+            }
+            pendingFillRef.current = null;
+            const editorManager = tableInstance.editorManager;
+            if (
+              !canFlushBatchFill(
+                pending,
+                editorManager?.editingEditor ? editorManager.editCell : undefined,
+              )
+            ) {
+              return;
+            }
+            runBatchFillRef.current(pending, tableInstance.getCellOriginValue(pending.col, pending.row));
+          }, 0);
+        }
+        return;
+      }
+      if (!tableInstance || !isPrintableEditKey(event.nativeEvent)) {
+        return;
+      }
+      // VTable already owns every key while one of its editors is open.
+      if (tableInstance.editorManager?.editingEditor) {
+        return;
+      }
+      const cellPos = tableInstance.stateManager?.select?.cellPos;
+      const activeCell =
+        cellPos === undefined
+          ? undefined
+          : resolveEditableCell((col, row) => tableInstance.getEditor(col, row), cellPos.col, cellPos.row);
+      if (!activeCell) {
+        return;
+      }
+      // Read the selection before the edit starts: startEditCell selects the edited cell,
+      // which collapses a multi-cell selection down to that one cell.
+      const rows = collectBatchFillRows(
+        tableInstance.getSelectedCellRanges(),
+        activeCell.col,
+        activeCell.row,
+      );
+      // The keystroke seeds the editor, so typing replaces the old value instead of
+      // leaving the user to clear the cell first.
+      event.preventDefault();
+      tableInstance.startEditCell(activeCell.col, activeCell.row, event.key);
+      // Armed after the edit starts: opening an editor fires selected_cell, and an armed
+      // fill must survive that.
+      pendingFillRef.current = rows.length ? { ...activeCell, rows } : null;
+    },
+    [tableInstance],
+  );
 
   const handleBeforeRecordsChange = useCallback((table: ITableInstance) => {
     resetResultTableLayout(table);
@@ -461,8 +590,10 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
         customOptions={{ showFrozenColumnDivider: frozenColumnFields.length > 0 }}
         options={{
           ...RESULT_TABLE_CONTENT_LAYOUT_OPTIONS,
-          // A single click enters edit mode; double click keeps working as before.
-          editCellTrigger: ['click', 'doubleclick'],
+          // A click only selects: editing starts on double click, on Enter, or by
+          // typing, which is handled in handleTableKeyDown so the keystroke can seed
+          // the editor instead of VTable opening it empty.
+          editCellTrigger: ['doubleclick'],
           rowSeriesNumber: {
             title: undefined,
             width: 'auto' as any,
