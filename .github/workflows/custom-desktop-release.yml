@@ -3,6 +3,9 @@ name: Community Custom Desktop Release
 # Builds unsigned desktop installers for the customized Community branch and
 # attaches them to a GitHub Release.
 #
+# Only the macOS package is built; the Windows and Linux matrix entries are
+# commented out below and can be restored when those installers are wanted.
+#
 # Triggered by a version tag (`v5.3.1`, `v5.3.0-beta.1`) or manually from the
 # Actions tab. Every runtime, including the JDK, is provisioned on the GitHub
 # runner, so nothing has to be installed locally.
@@ -39,12 +42,14 @@ jobs:
           - os: macos-14
             target: mac
             artifact: macos-arm64
-          - os: windows-latest
-            target: win
-            artifact: windows-x64
-          - os: ubuntu-22.04
-            target: linux
-            artifact: linux-x64
+          # Windows and Linux are not built for this branch. Uncomment to restore;
+          # the "Wrap Windows installer" step re-activates on its own.
+          # - os: windows-latest
+          #   target: win
+          #   artifact: windows-x64
+          # - os: ubuntu-22.04
+          #   target: linux
+          #   artifact: linux-x64
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
