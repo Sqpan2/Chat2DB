@@ -52,8 +52,8 @@ export default function useActive(
       case 'Enter': {
         if (activeValue) {
           onSelect([activeValue]);
+          e.preventDefault();
         }
-        e.preventDefault();
         break;
       }
 

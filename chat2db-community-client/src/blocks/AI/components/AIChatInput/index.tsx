@@ -642,8 +642,8 @@ const AIChatInput = forwardRef((props: ChatInputProps, ref: ForwardedRef<ChatInp
                 if (e.defaultPrevented) return;
               }
 
-              // Enter sends, Shift+Enter inserts a newline, and IME composition does not send.
-              if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current && !loading) {
+              // Cmd/Ctrl + Enter sends; a bare Enter inserts a newline, and IME composition does not send.
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isComposingRef.current && !loading) {
                 e.preventDefault();
                 handleSend();
               }
