@@ -9,6 +9,7 @@ import * as monaco from 'monaco-editor';
 import { SORT_TEXT } from '../type';
 import { useGlobalStore } from '@/store/global';
 import { isBackendCompletionModel } from './sqlCompletionModelMode';
+import { toSingleLineSqlTemplate } from './sqlCompletionSnippetText';
 
 let isRegistered = false;
 
@@ -40,13 +41,14 @@ export function registerSQLSnippets() {
       const keywordCase = useGlobalStore.getState().editorSettings.keywordCase;
       const suggestions: monaco.languages.CompletionItem[] = Object.keys(sqlSnippets).map((key) => {
         const snippet = sqlSnippets[key];
+        const singleLineSnippet = toSingleLineSqlTemplate(snippet.snippet);
         return {
           label: {
             label: key,
             description: snippet.detail,
           },
           kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: keywordCase ? snippet.snippet : snippet.snippet.toLowerCase(),
+          insertText: keywordCase ? singleLineSnippet : singleLineSnippet.toLowerCase(),
           insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
           documentation: {
             value: `**${key}**\n\n${snippet.detail}`,

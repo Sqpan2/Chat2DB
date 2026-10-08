@@ -42,6 +42,7 @@ import i18n from '@/i18n';
 import { useGlobalStore } from '@/store/global';
 import { getSqlCompletionContextId } from './sqlCompletionContext';
 import { isExpectedSqlCompletionPermissionError } from './sqlCompletionRequestError';
+import { normalizeSnippetCandidates } from './sqlCompletionSnippetText';
 
 const triggerCharacters = [' ', '.', ',', '(', ')', '[', ']', '{', '}'];
 const ACTIVATE_SNIPPET_SLOT_COMMAND = 'chat2db.sqlCompletion.activateSnippetSlot';
@@ -723,7 +724,7 @@ class CompletionProviderManager {
       this.notifyEditorHints(params.model, result?.editorHints || []);
     }
     return {
-      candidates: result.candidates || [],
+      candidates: normalizeSnippetCandidates(result.candidates || []),
       editorHints: result.editorHints || [],
       replaceStart: result.replaceStart,
       replaceEnd: result.replaceEnd,
@@ -742,7 +743,7 @@ class CompletionProviderManager {
       return null;
     }
     return {
-      candidates: result.candidates || [],
+      candidates: normalizeSnippetCandidates(result.candidates || []),
       editorHints: [],
     };
   }
