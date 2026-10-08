@@ -8,6 +8,7 @@ export interface ConfigAction {
   togglePanelLeft: () => void;
   setPanelLeftWidth: (width: number) => void;
   setPanelRightWidth: (width: number) => void;
+  setResultDockHeight: (tabId: string | number | null | undefined, height: number | string) => void;
 }
 
 export const createConfigAction: StateCreator<WorkspaceStore, [['zustand/devtools', never]], [], ConfigAction> = (
@@ -41,6 +42,16 @@ export const createConfigAction: StateCreator<WorkspaceStore, [['zustand/devtool
     set(
       produce((state: ConfigState) => {
         state.layout.panelRightWidth = width;
+      }),
+    );
+  },
+  setResultDockHeight: (tabId, height) => {
+    if (tabId === undefined || tabId === null) {
+      return;
+    }
+    set(
+      produce((state: ConfigState) => {
+        state.resultDockHeights[String(tabId)] = height;
       }),
     );
   },

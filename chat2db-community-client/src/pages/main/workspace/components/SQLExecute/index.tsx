@@ -9,7 +9,9 @@ import {
   forwardRef,
   ForwardedRef,
   useImperativeHandle,
+  useLayoutEffect,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 import { WorkspaceTabType } from '@/constants/workspace';
 import {
@@ -34,6 +36,8 @@ import {
   subscribeResultTabKeepHistory,
 } from '@/blocks/SearchResult/resultTabPreferences';
 import { useWorkspaceStore } from '@/store/workspace';
+import { shouldUseWorkspaceResultDock } from '@/store/workspace/utils/resultDock';
+import { useResultDockSlot } from './useResultDockSlot';
 import { useTreeStore } from '@/store/tree';
 import {
   IConsoleReturnExecuteSql,
@@ -132,6 +136,8 @@ interface IProps {
   sqlActionEnabled?: boolean;
   dataSourceState?: EditorDataSourceState;
   onEditorChange?: (value: string) => void;
+  /** Host this console's result pane in the workspace result dock. */
+  resultDock?: boolean;
 }
 
 interface DesktopExecutionCallbackState {
@@ -214,6 +220,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     sqlActionEnabled = true,
     dataSourceState = 'available',
     onEditorChange,
+    resultDock = false,
   } = props;
   const { styles, cx } = useStyles();
   const sqlEditorRef = useRef<ISQLEditorWithOperationRef>(null);
@@ -221,7 +228,19 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
   const [boundInfo, setBoundInfo] = useState<IBoundInfo>(_boundInfo);
   const boundInfoRef = useRef<IBoundInfo>(_boundInfo);
   const editorId = boundInfo.workspaceTabId ?? boundInfo.consoleId;
-  const [boxRightConsoleHeight, setBoxRightConsoleHeight] = useState<number | string>(0);
+  // The result dock owns the pane height so it can follow the active tab; a
+  // workspace without the dock keeps using this console's own pane.
+  const resultDockEnabled = useWorkspaceStore(shouldUseWorkspaceResultDock) && resultDock;
+  const boxRightConsoleHeight = useWorkspaceStore(
+    (state) => state.resultDockHeights[String(editorId ?? '')] ?? 0,
+  );
+  const setBoxRightConsoleHeight = useCallback(
+    (height: number | string) => {
+      useWorkspaceStore.getState().setResultDockHeight(editorId, height);
+    },
+    [editorId],
+  );
+  const resultDockSlot = useResultDockSlot(editorId, resultDockEnabled);
   const executionSequenceRef = useRef(0);
   const resultDisplayBatchSequenceRef = useRef(0);
   const resultDisplayBatchSequenceByExecutionRef = useRef<Record<number, number>>({});
@@ -714,12 +733,17 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
 
   // Whether to show the split panel.
   const isSplitPane = useMemo(() => {
-    const _isSplitPane = resultDataList.length > 0 || sqlExecutionLogState.records.length > 0 || executing === true;
-    if (!_isSplitPane) {
+    return resultDataList.length > 0 || sqlExecutionLogState.records.length > 0 || executing === true;
+  }, [resultDataList, sqlExecutionLogState.records.length, executing]);
+
+  // Without a result there is nothing to show, so the pane (and the workspace
+  // result dock) packs away. This runs after the commit because the height now
+  // lives in the shared workspace store.
+  useLayoutEffect(() => {
+    if (!isSplitPane && boxRightConsoleHeight !== 0) {
       setBoxRightConsoleHeight(0);
     }
-    return _isSplitPane;
-  }, [resultDataList, sqlExecutionLogState.records.length, executing]);
+  }, [isSplitPane, boxRightConsoleHeight, setBoxRightConsoleHeight]);
 
   const isActive = useMemo(() => {
     return activeConsoleId === editorId || !!props.isActive;
@@ -1066,6 +1090,79 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     },
   }));
 
+  const renderEditorPane = () => (
+    <div className={styles.boxRightConsole}>
+      <SQLEditorWithOperation
+        type={type}
+        id={editorId?.toString() || ''}
+        ref={sqlEditorRef}
+        defaultSQL={initDDL}
+        workspaceTabsTitle={workspaceTabsTitle}
+        dbInfo={boundInfo}
+        setDBInfo={handleChangeDBInfo}
+        active={isActive}
+        onExecuteSQL={handleExecuteSQL}
+        reloadSQL={loadSQL}
+        isConsole={isConsole}
+        sqlActionEnabled={sqlActionEnabled}
+        dataSourceState={dataSourceState}
+        onChange={onEditorChange}
+      />
+    </div>
+  );
+
+  const renderResultPane = () => (
+    <SplitPaneUnpack onUnfold={handleUnfold} onPackUp={handlePackUp} className={styles.boxRightResult}>
+      {isSplitPane && (
+        <>
+          {!!(resultDataList.length || sqlExecutionLogState.records.length) && (
+            <SearchResult
+              resultDataList={resultDataList}
+              executionLogRecords={sqlExecutionLogState.records}
+              keepExecutionLogHistory={keepExecutionLogHistory}
+              keepResultHistory={keepResultHistory}
+              showExecutionResultCoordinates={showResultCoordinates}
+              closeActiveResultShortcutEnabled={isActive}
+              resultBatchKey={resultBatchKey}
+              forceOutputTab={forceOutputTab}
+              onClearExecutionLog={handleClearExecutionLog}
+              onKeepExecutionLogHistoryChange={handleKeepExecutionLogHistoryChange}
+              onKeepResultHistoryChange={handleKeepResultHistoryChange}
+              onResultDataListChange={handleResultDataListChange}
+            />
+          )}
+          {executing && (
+            <div
+              className={
+                resultDataList.length || sqlExecutionLogState.records.length
+                  ? styles.executingBar
+                  : styles.tableLoading
+              }
+            >
+              <Spin size={resultDataList.length || sqlExecutionLogState.records.length ? 'small' : 'default'} />
+              <div className={styles.executingText}>{i18n('common.text.currentExecution')}</div>
+              <div className={styles.stopExecuteSql} onClick={stopExecuteSql}>
+                {i18n('common.button.cancelRequest')}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </SplitPaneUnpack>
+  );
+
+  // The workspace result dock hosts the pane for the active tab, so the console
+  // only keeps its editor in place; without the dock it renders the pane inline
+  // exactly as before.
+  if (resultDockEnabled) {
+    return (
+      <>
+        {renderEditorPane()}
+        {resultDockSlot && createPortal(renderResultPane(), resultDockSlot)}
+      </>
+    );
+  }
+
   return (
     <SplitPaneAny
       className={cx(
@@ -1087,61 +1184,8 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
         setBoxRightConsoleHeight(_size);
       }}
     >
-      <div className={styles.boxRightConsole}>
-        <SQLEditorWithOperation
-          type={type}
-          id={editorId?.toString() || ''}
-          ref={sqlEditorRef}
-          defaultSQL={initDDL}
-          workspaceTabsTitle={workspaceTabsTitle}
-          dbInfo={boundInfo}
-          setDBInfo={handleChangeDBInfo}
-          active={isActive}
-          onExecuteSQL={handleExecuteSQL}
-          reloadSQL={loadSQL}
-          isConsole={isConsole}
-          sqlActionEnabled={sqlActionEnabled}
-          dataSourceState={dataSourceState}
-          onChange={onEditorChange}
-        />
-      </div>
-      <SplitPaneUnpack onUnfold={handleUnfold} onPackUp={handlePackUp} className={styles.boxRightResult}>
-        {isSplitPane && (
-          <>
-            {!!(resultDataList.length || sqlExecutionLogState.records.length) && (
-              <SearchResult
-                resultDataList={resultDataList}
-                executionLogRecords={sqlExecutionLogState.records}
-                keepExecutionLogHistory={keepExecutionLogHistory}
-                keepResultHistory={keepResultHistory}
-                showExecutionResultCoordinates={showResultCoordinates}
-                closeActiveResultShortcutEnabled={isActive}
-                resultBatchKey={resultBatchKey}
-                forceOutputTab={forceOutputTab}
-                onClearExecutionLog={handleClearExecutionLog}
-                onKeepExecutionLogHistoryChange={handleKeepExecutionLogHistoryChange}
-                onKeepResultHistoryChange={handleKeepResultHistoryChange}
-                onResultDataListChange={handleResultDataListChange}
-              />
-            )}
-            {executing && (
-              <div
-                className={
-                  resultDataList.length || sqlExecutionLogState.records.length
-                    ? styles.executingBar
-                    : styles.tableLoading
-                }
-              >
-                <Spin size={resultDataList.length || sqlExecutionLogState.records.length ? 'small' : 'default'} />
-                <div className={styles.executingText}>{i18n('common.text.currentExecution')}</div>
-                <div className={styles.stopExecuteSql} onClick={stopExecuteSql}>
-                  {i18n('common.button.cancelRequest')}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </SplitPaneUnpack>
+      {renderEditorPane()}
+      {renderResultPane()}
     </SplitPaneAny>
   );
 });

@@ -1762,6 +1762,7 @@ const WorkspaceTabs = memo(() => {
         loadSQL={loadSQL}
         sqlActionEnabled={sqlActionEnabled}
         dataSourceState={dataSourceState}
+        resultDock
       />
     );
   };

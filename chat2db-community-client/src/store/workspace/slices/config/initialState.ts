@@ -5,6 +5,11 @@ export interface ConfigState {
     panelRight: boolean;
     panelRightWidth: number;
   };
+  /**
+   * Result dock height per workspace tab. Kept outside `layout` on purpose: the
+   * persisted layout must keep its current shape.
+   */
+  resultDockHeights: Record<string, number | string>;
 }
 
 export const initConfigState: ConfigState = {
@@ -14,4 +19,5 @@ export const initConfigState: ConfigState = {
     panelLeftWidth: 260,
     panelRightWidth: 300,
   },
+  resultDockHeights: {},
 };
