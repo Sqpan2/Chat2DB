@@ -172,7 +172,8 @@ const CanvasTable = forwardRef((props: IProps, ref: ForwardedRef<CanvasTableRef>
       enableLineBreak: true, // turns on line wrapping
       // transpose: true, // Turn on transpose Vtable seems to have a bug
       tooltip: {
-        isShowOverflowTextTooltip: false,
+        // Hovering a truncated cell floats the full value.
+        isShowOverflowTextTooltip: true,
       },
       ...(options || {}),
     };

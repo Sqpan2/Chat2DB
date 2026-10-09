@@ -8,6 +8,7 @@ import {
 import { databaseMap, databaseTypeList } from '@/constants/database';
 import supportedDatabaseService from '@/service/supportedDatabase';
 import { useTreeStore } from '@/store/tree';
+import { scheduleDatabaseTreePreload } from '@/store/tree/databaseTreePreload';
 import { buildIconSprite, registerDynamicDatabases } from '@/utils/dynamicDatabaseRegistry';
 
 const useGlobalData = () => {
@@ -43,7 +44,13 @@ const useGlobalData = () => {
       .catch(() => {
         // Older backends without the endpoint keep the built-in list.
       });
-    getTreeData();
+    // Once the tree root lands, walk every datasource's databases and tables into the cache in the
+    // background, so the tree, the search and the completion work without a first wait.
+    getTreeData()
+      .catch(() => undefined)
+      .then(() => {
+        scheduleDatabaseTreePreload(() => useTreeStore.getState());
+      });
   };
 };
 

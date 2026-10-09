@@ -68,7 +68,7 @@ export const useStyles = createStyles(({ css, token }, direction: 'vertical' | '
         width: 40px;
       }
       .operatingHandle {
-        display: none;
+        display: flex;
         align-items: center;
         justify-content: center;
         ${direction === 'vertical'
