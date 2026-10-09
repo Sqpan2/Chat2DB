@@ -583,6 +583,8 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
         onInit={onInit}
         onBeforeRecordsChange={handleBeforeRecordsChange}
         className={styles.canvasTable}
+        // Hover a body cell to float its full value in a popup.
+        tooltip
         onCopy={onCopy}
         onPaste={onPaste}
         onKeyDown={handleTableKeyDown}
@@ -590,6 +592,9 @@ const ResultSetTable = forwardRef((props: IProps, ref: ForwardedRef<ResultSetTab
         customOptions={{ showFrozenColumnDivider: frozenColumnFields.length > 0 }}
         options={{
           ...RESULT_TABLE_CONTENT_LAYOUT_OPTIONS,
+          // The custom cell hover popup (tooltip prop) covers every body cell, so the
+          // built-in overflow-only tooltip is disabled here to avoid double floating.
+          tooltip: { isShowOverflowTextTooltip: false },
           // A click only selects: editing starts on double click, on Enter, or by
           // typing, which is handled in handleTableKeyDown so the keystroke can seed
           // the editor instead of VTable opening it empty.
