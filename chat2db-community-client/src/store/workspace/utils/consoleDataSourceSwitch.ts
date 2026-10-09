@@ -3,13 +3,14 @@ import { WorkspaceTabType } from '@/constants/workspace';
 import type { IBoundInfo, IWorkspaceTab, TreeNodeData } from '@/typings';
 
 /**
- * Node kinds a console may be pointed at: the objects a datasource holds, and the databases themselves.
+ * Node kinds a console may be pointed at: every object a datasource holds, the databases themselves,
+ * and the datasource.
  *
- * A datasource node is deliberately left out. Double-clicking one is how the tree is browsed - it
- * expands the node - and re-pointing the console at every glance would be a surprise rather than a
- * convenience.
+ * A datasource node names no database, so the console keeps the one it has and only changes
+ * connection; the double-click still expands the node it always expanded.
  */
 const SWITCHABLE_NODE_TYPES: ReadonlySet<TreeNodeType> = new Set([
+  TreeNodeType.DATA_SOURCE,
   TreeNodeType.TABLE,
   TreeNodeType.VIEW,
   TreeNodeType.FUNCTION,
@@ -83,8 +84,10 @@ export function resolveConsoleDataSourceSwitch(
     dataSourceId,
     dataSourceName,
     databaseType,
-    databaseName,
-    schemaName,
+    // A node that names no database leaves the console's own choice alone: a datasource switch keeps
+    // whichever database it was reading.
+    ...(databaseName ? { databaseName } : {}),
+    ...(schemaName ? { schemaName } : {}),
     environmentId,
     environment,
     identityColor,

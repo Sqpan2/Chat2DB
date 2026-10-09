@@ -33,7 +33,6 @@ assert.deepEqual(
     dataSourceName: 'test-ajk-user02.db.58dns.org',
     databaseType: DatabaseTypeCode.MYSQL,
     databaseName: 'db58_hbg_ccf',
-    schemaName: undefined,
     environmentId: 3,
     environment: { id: 3, name: 'Release' },
     identityColor: '#222',
@@ -78,7 +77,6 @@ assert.deepEqual(
     dataSourceName: 'test-ajk-user02.db.58dns.org',
     databaseType: DatabaseTypeCode.MYSQL,
     databaseName: 'db58_hbg_ccf',
-    schemaName: undefined,
     environmentId: undefined,
     environment: undefined,
     identityColor: undefined,
@@ -95,15 +93,38 @@ assert.equal(
   7,
   'a view names a datasource as readily as a table does',
 );
-assert.equal(
+assert.deepEqual(
   resolveConsoleDataSourceSwitch(consoleTab, {
     key: 'dataSource_7',
     originalTitle: 'test-ajk-user02.db.58dns.org',
     treeNodeType: TreeNodeType.DATA_SOURCE,
-    extraParams: { dataSourceId: 7, databaseName: 'db58_hbg_ccf' },
+    extraParams: {
+      dataSourceId: 7,
+      dataSourceName: 'test-ajk-user02.db.58dns.org',
+      databaseType: DatabaseTypeCode.MYSQL,
+    },
   }),
-  null,
-  'browsing the tree by expanding a datasource must not re-point the console',
+  {
+    workspaceTabId: 11,
+    dataSourceId: 7,
+    dataSourceName: 'test-ajk-user02.db.58dns.org',
+    databaseType: DatabaseTypeCode.MYSQL,
+    environmentId: undefined,
+    environment: undefined,
+    identityColor: undefined,
+  },
+  'a datasource node changes the connection and leaves the chosen database alone',
+);
+assert.equal(
+  'databaseName' in
+    (resolveConsoleDataSourceSwitch(consoleTab, {
+      key: 'dataSource_7',
+      originalTitle: 'test-ajk-user02',
+      treeNodeType: TreeNodeType.DATA_SOURCE,
+      extraParams: { dataSourceId: 7 },
+    }) || {}),
+  false,
+  'a datasource node never writes a database, so the console keeps the one it has',
 );
 assert.equal(
   resolveConsoleDataSourceSwitch(consoleTab, tableNode({ databaseName: 'db58_hbg_ccf' })),
