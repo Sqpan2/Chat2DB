@@ -219,6 +219,7 @@ export default {
   'workspace.title.databaseManagement': 'Base de datos',
   'workspace.text.pleaseSelectDataSource': 'Seleccione una fuente de datos',
   'workspace.text.executionAutoLocated': '(ubicado automáticamente)',
+  'workspace.text.consoleFollowsDataSource': 'Consola cambiada a',
   'workspace.text.deleteGroup.tip': '¿Confirma que desea eliminar el grupo {1}?',
   'workspace.text.databaseTable': 'Tabla de base de datos',
   'workspace.format.json': 'Formato JSON',

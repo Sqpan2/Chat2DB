@@ -210,6 +210,7 @@ export default {
   'workspace.title.databaseManagement': '数据库',
   'workspace.text.pleaseSelectDataSource': '请选择数据源',
   'workspace.text.executionAutoLocated': '（自动定位）',
+  'workspace.text.consoleFollowsDataSource': '控制台已切换到',
   'workspace.text.deleteGroup.tip': '你确定要删除组{1}吗？',
   'workspace.text.databaseTable': '数据库表',
   'workspace.format.json': 'JSON 格式化',

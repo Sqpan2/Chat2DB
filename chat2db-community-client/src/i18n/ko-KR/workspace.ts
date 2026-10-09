@@ -217,6 +217,7 @@ export default {
   'workspace.title.databaseManagement': '데이터베이스',
   'workspace.text.pleaseSelectDataSource': '데이터 소스를 선택해 주세요',
   'workspace.text.executionAutoLocated': '(자동 위치 지정)',
+  'workspace.text.consoleFollowsDataSource': '콘솔을 다음으로 전환했습니다:',
   'workspace.text.deleteGroup.tip': '그룹 {1}을(를) 삭제하시겠습니까?',
   'workspace.text.databaseTable': '데이터베이스 테이블',
   'workspace.format.json': 'JSON 서식 지정',

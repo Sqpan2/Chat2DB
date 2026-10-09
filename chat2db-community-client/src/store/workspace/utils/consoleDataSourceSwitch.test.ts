@@ -3,7 +3,7 @@ import { DatabaseTypeCode } from '@/constants/common';
 import { TreeNodeType } from '@/constants/tree';
 import { WorkspaceTabType } from '@/constants/workspace';
 import type { IWorkspaceTab, TreeNodeData } from '@/typings';
-import { resolveConsoleDataSourceSwitch } from './consoleDataSourceSwitch';
+import { resolveConsoleDataSourceSwitch, resolveSwitchTargetTab } from './consoleDataSourceSwitch';
 
 const tableNode = (extraParams: TreeNodeData['extraParams']): TreeNodeData => ({
   key: 'table_verify_task',
@@ -115,6 +115,30 @@ assert.equal(
   resolveConsoleDataSourceSwitch(undefined, tableNode({ dataSourceId: 7, databaseName: 'db58_hbg_ccf' })),
   null,
   'with no tab open there is no console to re-point',
+);
+
+const otherConsole: IWorkspaceTab = { id: 22, type: WorkspaceTabType.CONSOLE, title: '[test-ajk-user02]' };
+const dataTab: IWorkspaceTab = { id: 33, type: WorkspaceTabType.EditTableData, title: 'verify_task' };
+
+assert.equal(
+  resolveSwitchTargetTab(consoleTab, null, [consoleTab, dataTab])?.id,
+  11,
+  'the console the user is looking at is the one that follows the tree',
+);
+assert.equal(
+  resolveSwitchTargetTab(dataTab, 11, [consoleTab, dataTab, otherConsole])?.id,
+  11,
+  'a data tab holding the focus still re-points the console the user last worked in',
+);
+assert.equal(
+  resolveSwitchTargetTab(dataTab, 99, [consoleTab, dataTab])?.id,
+  undefined,
+  'a console that is no longer open cannot be re-pointed',
+);
+assert.equal(
+  resolveSwitchTargetTab(dataTab, null, [dataTab])?.id,
+  undefined,
+  'with no console open there is nothing to follow the tree',
 );
 
 console.log('Console data source switch tests passed');

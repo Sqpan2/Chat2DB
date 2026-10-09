@@ -19,6 +19,31 @@ const SWITCHABLE_NODE_TYPES: ReadonlySet<TreeNodeType> = new Set([
 ]);
 
 /**
+ * The console a double-click re-points.
+ *
+ * The tab the user is looking at comes first. It is not always a console though: double-clicking a
+ * table opens that table's data tab, which takes the focus, so the next double-click would find a data
+ * tab looking back at it. The console the user last had open is the one they mean in that case.
+ *
+ * @param activeTab tab that was active when the double-click happened.
+ * @param lastConsoleTabId console the user last had active, if any.
+ * @param workspaceTabList every open tab.
+ * @returns the console to re-point, or undefined when there is none.
+ */
+export function resolveSwitchTargetTab(
+  activeTab: IWorkspaceTab | null | undefined,
+  lastConsoleTabId: string | number | null,
+  workspaceTabList: readonly IWorkspaceTab[] | null | undefined,
+): IWorkspaceTab | undefined {
+  if (activeTab?.type === WorkspaceTabType.CONSOLE) {
+    return activeTab;
+  }
+  return (workspaceTabList || []).find(
+    (tab) => tab.type === WorkspaceTabType.CONSOLE && tab.id === lastConsoleTabId,
+  );
+}
+
+/**
  * The binding the console takes when the tree hands it an object.
  * <p>
  * The console follows the object the user pointed at: the datasource it lives in and the database

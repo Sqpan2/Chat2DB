@@ -216,6 +216,7 @@ export default {
   'workspace.title.databaseManagement': 'データベース',
   'workspace.text.pleaseSelectDataSource': 'データソースを選択してください',
   'workspace.text.executionAutoLocated': '（自動特定）',
+  'workspace.text.consoleFollowsDataSource': 'コンソールを切り替えました:',
   'workspace.text.deleteGroup.tip': 'グループ{1}を削除してもよろしいですか？',
   'workspace.text.databaseTable': 'データベース表',
   'workspace.format.json': 'JSONをフォーマット',

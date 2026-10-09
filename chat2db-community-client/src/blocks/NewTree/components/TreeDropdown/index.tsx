@@ -3,12 +3,17 @@ import { Dropdown } from 'antd';
 import { TreeNodeData } from '@/typings';
 import type { IWorkspaceTab } from '@/typings/workspace';
 import { OperationColumn } from '@/constants';
+import { WorkspaceTabType } from '@/constants/workspace';
 import { ShortcutAction } from '@/constants/shortcut';
 import { useCreateRightClickMenu, canBeDoubleClicked } from '../../hooks/useCreateRightClickMenu';
-import { IconfontSvg } from '@chat2db/ui';
+import { IconfontSvg, staticMessage } from '@chat2db/ui';
+import i18n from '@/i18n';
 import { useTreeStore } from '@/store/tree';
 import { useWorkspaceStore } from '@/store/workspace';
-import { resolveConsoleDataSourceSwitch } from '@/store/workspace/utils/consoleDataSourceSwitch';
+import {
+  resolveConsoleDataSourceSwitch,
+  resolveSwitchTargetTab,
+} from '@/store/workspace/utils/consoleDataSourceSwitch';
 import ShortcutMenuLabel from '@/components/ShortcutMenuLabel';
 import { loadResourceOperationCapabilities } from '@/client-extension/resourceOperationCapabilities';
 import type { ResourceOperationCapabilities } from '@/client-extension/types';
@@ -36,18 +41,31 @@ function findActiveWorkspaceTab() {
 }
 
 /**
- * Points the console the user is looking at at the datasource and database of the node they just
+ * Points the console the user was working in at the datasource and database of the node they just
  * opened, so an object found in another datasource can be queried where it lives. The tab the node
  * opens itself is untouched: only a console tab owns a binding this may re-point.
  *
  * @param activeTab tab that was active before the double-click, since the node's own tab takes the
  * focus as it opens.
+ * @param lastConsoleTabId console the user last had active, for when the focus already sits elsewhere.
  */
-function switchActiveConsoleDataSource(activeTab: IWorkspaceTab | undefined, node: TreeNodeData) {
-  const binding = resolveConsoleDataSourceSwitch(activeTab, node);
-  if (binding) {
-    useWorkspaceStore.getState().updateWorkspaceTabBoundInfo(binding);
+function switchActiveConsoleDataSource(
+  activeTab: IWorkspaceTab | undefined,
+  lastConsoleTabId: string | number | null,
+  node: TreeNodeData,
+) {
+  const { workspaceTabList, updateWorkspaceTabBoundInfo } = useWorkspaceStore.getState();
+  const consoleTab = resolveSwitchTargetTab(activeTab, lastConsoleTabId, workspaceTabList);
+  const binding = resolveConsoleDataSourceSwitch(consoleTab, node);
+  if (!binding) {
+    return;
   }
+  updateWorkspaceTabBoundInfo(binding);
+  staticMessage.success(
+    `${i18n('workspace.text.consoleFollowsDataSource')} ${
+      binding.dataSourceName || `#${binding.dataSourceId}`
+    }${binding.databaseName ? ` / ${binding.databaseName}` : ''}`,
+  );
 }
 
 const TreeDropdown = (props: IProps, ref) => {
@@ -62,6 +80,7 @@ const TreeDropdown = (props: IProps, ref) => {
     };
   } | null>(null);
   const authorizationSequence = useRef(0);
+  const lastConsoleTabIdRef = useRef<string | number | null>(null);
   const keepMenuOpenRef = useRef(false);
   const interactiveItemFocusRef = useRef<(() => void) | null>(null);
 
@@ -99,6 +118,10 @@ const TreeDropdown = (props: IProps, ref) => {
     // Read before anything opens: the tab a node opens takes the focus, and the console to re-point is
     // the one the user was looking at when they double-clicked.
     const activeTab = findActiveWorkspaceTab();
+    // Remembered for the double-clicks that land while a tab the tree itself opened holds the focus.
+    if (activeTab?.type === WorkspaceTabType.CONSOLE) {
+      lastConsoleTabIdRef.current = activeTab.id;
+    }
     if (canBeDoubleClicked.includes(node.treeNodeType)) {
       const capabilities = await loadResourceOperationCapabilities(node);
       const menu = createRightClickMenu(node, specialHandleLoadData || handleLoadData, capabilities);
@@ -110,11 +133,11 @@ const TreeDropdown = (props: IProps, ref) => {
           handled = true;
         }
       });
-      switchActiveConsoleDataSource(activeTab, node);
+      switchActiveConsoleDataSource(activeTab, lastConsoleTabIdRef.current, node);
       return handled;
     }
     // A database is not opened by a double-click but expanded, and the console still follows it.
-    switchActiveConsoleDataSource(activeTab, node);
+    switchActiveConsoleDataSource(activeTab, lastConsoleTabIdRef.current, node);
     return false;
   };
 
