@@ -6,6 +6,7 @@ import { debounce } from 'lodash';
 import MonacoEditor, { MonacoEditorRef } from '../MonacoEditor';
 import CompletionProviderManager from '../../core/completionProviderManager';
 import { setBackendCompletionModel } from '../../core/sqlCompletionModelMode';
+import { shouldFanOutSqlCompletion } from '../../core/sqlCompletionScopes';
 import { DatabaseCapability } from '@/constants';
 import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import {
@@ -243,10 +244,9 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
         if (!model) {
           return;
         }
-        const backendCompletionMode = isDatabaseCapabilitySupported(
-          dbInfo.databaseType,
-          DatabaseCapability.BACKEND_COMPLETION,
-        );
+        const backendCompletionMode =
+          isDatabaseCapabilitySupported(dbInfo.databaseType, DatabaseCapability.BACKEND_COMPLETION) ||
+          shouldFanOutSqlCompletion(dbInfo);
         setBackendCompletionModel(model, backendCompletionMode);
         completionProvider.current?.bindModelDBInfo(model, dbInfo);
         if (!backendCompletionMode) {

@@ -1,6 +1,7 @@
 import { produce } from 'immer';
 import type { StateCreator } from 'zustand/vanilla';
 import { WorkspaceStore } from '../../store';
+import { recordExecutedDataSource as pushExecutedDataSource } from '../../utils/unboundCompletion';
 import { ConfigState, initConfigState } from './initialState';
 
 export interface ConfigAction {
@@ -9,6 +10,7 @@ export interface ConfigAction {
   setPanelLeftWidth: (width: number) => void;
   setPanelRightWidth: (width: number) => void;
   setResultDockHeight: (tabId: string | number | null | undefined, height: number | string) => void;
+  recordExecutedDataSource: (dataSourceId: number | null | undefined) => void;
 }
 
 export const createConfigAction: StateCreator<WorkspaceStore, [['zustand/devtools', never]], [], ConfigAction> = (
@@ -52,6 +54,16 @@ export const createConfigAction: StateCreator<WorkspaceStore, [['zustand/devtool
     set(
       produce((state: ConfigState) => {
         state.resultDockHeights[String(tabId)] = height;
+      }),
+    );
+  },
+  recordExecutedDataSource: (dataSourceId) => {
+    set(
+      produce((state: ConfigState) => {
+        state.recentExecutedDataSourceIds = pushExecutedDataSource(
+          state.recentExecutedDataSourceIds,
+          dataSourceId,
+        );
       }),
     );
   },

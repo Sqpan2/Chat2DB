@@ -98,6 +98,44 @@ const queryTips = createRequest<
   errorLevel: false,
 });
 
+/**
+ * Complete SQL in an editor that has no datasource (or no database) selected.
+ * Every scope listed is read with its own connection and the candidates are
+ * merged server-side, so the order of `scopes` decides which datasource wins a
+ * duplicated table or column name.
+ */
+const queryUnboundTips = createRequest<
+  {
+    consoleId: number;
+    /** Datasources to collect candidates from, most relevant first. */
+    scopes: Array<{ dataSourceId: number }>;
+
+    /** Whether a fully qualified name is required */
+    needFullName?: boolean;
+    /** SQL keyword presentation case for backend-owned completion candidates */
+    keywordCase?: SqlCompletionKeywordCase;
+    /** Current Monaco snippet placeholder slot */
+    activeSnippetSlot?: ISqlCompletionActiveSnippetSlot;
+  } & (
+    | {
+        /** Complete SQL in the current editor */
+        sql: string;
+        /** The offset of the cursor in the complete SQL */
+        cursor: number;
+      }
+    | {
+        /** The previous part of the cursor in the current sql sql */
+        beforeSql: string;
+        /** The part of sql behind the cursor in the current sql */
+        afterSql: string;
+      }
+  ),
+  ISqlCompletionResult
+>(`${prefix}/context/tip/unbound`, {
+  method: 'post',
+  errorLevel: false,
+});
+
 const queryHover = createRequest<
   {
     consoleId: number;
@@ -116,4 +154,11 @@ const queryHover = createRequest<
   errorLevel: false,
 });
 
-export default { querySQLParser, queryQuickSQLParser, queryDatabaseAndSchema, queryTips, queryHover };
+export default {
+  querySQLParser,
+  queryQuickSQLParser,
+  queryDatabaseAndSchema,
+  queryTips,
+  queryUnboundTips,
+  queryHover,
+};

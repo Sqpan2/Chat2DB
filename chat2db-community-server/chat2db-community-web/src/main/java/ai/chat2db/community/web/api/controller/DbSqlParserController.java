@@ -9,6 +9,7 @@ import ai.chat2db.community.domain.api.model.sql.SqlKeyword;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlCompletionGetRequest;
 import ai.chat2db.community.domain.api.service.db.IDbSqlCompletionService;
 import ai.chat2db.community.domain.api.service.db.IDbSqlParserService;
+import ai.chat2db.community.domain.api.service.db.IDbSqlUnboundCompletionService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.tools.wrapper.result.ListResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
@@ -17,6 +18,7 @@ import ai.chat2db.community.web.api.model.request.db.SqlCompletionRequest;
 import ai.chat2db.community.web.api.model.request.db.SqlContextParserRequest;
 import ai.chat2db.community.web.api.model.request.db.SqlHoverRequest;
 import ai.chat2db.community.web.api.model.request.db.SqlKeywordRequest;
+import ai.chat2db.community.web.api.model.request.db.UnboundSqlCompletionRequest;
 import ai.chat2db.community.web.api.model.response.db.SqlCompletionResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -35,13 +37,16 @@ public class DbSqlParserController {
     private final DbWebConverter dbWebConverter;
     private final IDbSqlParserService sqlParserService;
     private final IDbSqlCompletionService sqlCompletionService;
+    private final IDbSqlUnboundCompletionService sqlUnboundCompletionService;
 
     public DbSqlParserController(DbWebConverter dbWebConverter,
             IDbSqlParserService sqlParserService,
-            IDbSqlCompletionService sqlCompletionService) {
+            IDbSqlCompletionService sqlCompletionService,
+            IDbSqlUnboundCompletionService sqlUnboundCompletionService) {
         this.dbWebConverter = dbWebConverter;
         this.sqlParserService = sqlParserService;
         this.sqlCompletionService = sqlCompletionService;
+        this.sqlUnboundCompletionService = sqlUnboundCompletionService;
     }
 
     /**
@@ -102,6 +107,23 @@ public class DbSqlParserController {
             @Valid @RequestBody SqlCompletionRequest request) {
         DbSqlCompletionGetRequest sqlCompletionParam = dbWebConverter.request2completionParam(request);
         var result = sqlCompletionService.complete(sqlCompletionParam);
+        return DataResult.of(SqlCompletionResponse.from(result));
+    }
+
+    /**
+     * Handles SQL completion for an editor with no datasource bound.
+     * <p>
+     * Endpoint: {@code POST /api/sql_parser/context/tip/unbound}. Each scope in the request is read
+     * with its own connection and the candidates are merged, most relevant scope first.
+     *
+     * @param request request payload with the scopes to complete against.
+     * @return data result containing merged SQL completion response.
+     */
+    @PostMapping("/context/tip/unbound")
+    public DataResult<SqlCompletionResponse> sqlUnboundCompletion(
+            @Valid @RequestBody UnboundSqlCompletionRequest request) {
+        var param = dbWebConverter.request2UnboundCompletionParam(request);
+        var result = sqlUnboundCompletionService.complete(param);
         return DataResult.of(SqlCompletionResponse.from(result));
     }
 

@@ -16,6 +16,7 @@ import ai.chat2db.community.domain.api.model.request.sql.DbSqlContextParserReque
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlFormatRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlHoverRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlKeywordRequest;
+import ai.chat2db.community.domain.api.model.request.sql.DbSqlUnboundCompletionRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlValidSelectRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbTableQueryRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbTableVectorRequest;
@@ -340,6 +341,24 @@ public abstract class DbWebConverter {
         param.setNeedFullName(request.isNeedFullName());
         param.setKeywordCase(request.getKeywordCase());
         param.setActiveSnippetSlot(request.getActiveSnippetSlot());
+        return param;
+    }
+
+    public DbSqlUnboundCompletionRequest request2UnboundCompletionParam(UnboundSqlCompletionRequest request) {
+        if (request == null) {
+            return null;
+        }
+        DbSqlUnboundCompletionRequest param = new DbSqlUnboundCompletionRequest();
+        param.setConsoleId(request.getConsoleId());
+        String beforeSql = StringUtils.defaultString(request.getBeforeSql());
+        String afterSql = StringUtils.defaultString(request.getAfterSql());
+        String sql = StringUtils.isNotEmpty(request.getSql()) ? request.getSql() : beforeSql + afterSql;
+        param.setSql(sql);
+        param.setCursor(request.getCursor() == null ? beforeSql.length() : request.getCursor());
+        param.setNeedFullName(request.getNeedFullName());
+        param.setKeywordCase(request.getKeywordCase());
+        param.setActiveSnippetSlot(request.getActiveSnippetSlot());
+        param.setScopes(request.getScopes());
         return param;
     }
     public abstract DbSqlHoverRequest request2param(SqlHoverRequest request);

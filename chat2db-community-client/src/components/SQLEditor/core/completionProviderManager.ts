@@ -40,9 +40,12 @@ import { SORT_TEXT, TIP_TYPE } from '../type';
 import { IBoundInfo } from '@/typings';
 import i18n from '@/i18n';
 import { useGlobalStore } from '@/store/global';
+import { useTreeStore } from '@/store/tree';
+import { useWorkspaceStore } from '@/store/workspace';
 import { getSqlCompletionContextId } from './sqlCompletionContext';
 import { isExpectedSqlCompletionPermissionError } from './sqlCompletionRequestError';
 import { normalizeSnippetCandidates } from './sqlCompletionSnippetText';
+import { resolveSqlCompletionScopes, shouldFanOutSqlCompletion } from './sqlCompletionScopes';
 
 const triggerCharacters = [' ', '.', ',', '(', ')', '[', ']', '{', '}'];
 const ACTIVATE_SNIPPET_SLOT_COMMAND = 'chat2db.sqlCompletion.activateSnippetSlot';
@@ -208,7 +211,16 @@ class CompletionProviderManager {
       this.registerBuiltInFunctionsProvider();
     }
 
-    if (completionContextId === undefined || !dataSourceId) return;
+    if (completionContextId === undefined) return;
+
+    // Nothing to complete against, or a datasource without a database chosen:
+    // the tips provider fans out over several datasources instead.
+    if (shouldFanOutSqlCompletion(dbInfo)) {
+      this.registerTipsProvider();
+      return;
+    }
+
+    if (!dataSourceId) return;
     if (backendCompletionMode) {
       this.registerTipsProvider();
       return;
@@ -628,11 +640,29 @@ class CompletionProviderManager {
     const { dataSourceId, databaseName, schemaName, databaseType } = dbInfo || {};
     const completionContextId = getSqlCompletionContextId(dbInfo);
 
-    if (
-      completionContextId === undefined ||
-      !dataSourceId
-      // || (supportDatabase && !databaseName) || (supportSchema && !schemaName)
-    ) {
+    if (completionContextId === undefined) {
+      return null;
+    }
+
+    const scopes = this.resolveTipsScopes(dbInfo);
+    if (scopes.length) {
+      try {
+        return await SQLParserService.queryUnboundTips({
+          consoleId: completionContextId,
+          ...this.getTipsQuerySqlPayload(params),
+          scopes,
+          ...(keywordCase ? { keywordCase } : {}),
+          activeSnippetSlot,
+        });
+      } catch (error) {
+        if (!isExpectedSqlCompletionPermissionError(error)) {
+          console.error('Error fetching unbound tips:', error);
+        }
+        return null;
+      }
+    }
+
+    if (!dataSourceId) {
       return null;
     }
 
@@ -653,6 +683,17 @@ class CompletionProviderManager {
       }
       return null;
     }
+  }
+
+  /**
+   * Datasources a completion request of this editor has to be fanned out to.
+   * Empty when the editor's own binding can answer the request by itself.
+   */
+  private resolveTipsScopes(dbInfo: IBoundInfo | null | undefined) {
+    return resolveSqlCompletionScopes(dbInfo, {
+      executedDataSourceIds: useWorkspaceStore.getState().recentExecutedDataSourceIds,
+      dataSourceNodes: useTreeStore.getState().dataSourceList || [],
+    });
   }
 
   private getTipsQuerySqlPayload(

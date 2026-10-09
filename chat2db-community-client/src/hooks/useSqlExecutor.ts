@@ -12,6 +12,7 @@ import {
 } from '@/service/sqlExecutionStream';
 import { v4 as uuidv4 } from 'uuid';
 import { useGlobalStore } from '@/store/global';
+import { useWorkspaceStore } from '@/store/workspace';
 import { settingSelectors } from '@/store/global/selectors';
 import {
   beginSqlExecutionRequest,
@@ -106,6 +107,9 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
     if (params.dataSourceId == null) {
       return Promise.reject(new Error('dataSourceId is required'));
     }
+    // Completion in a console without a datasource suggests the datasources run
+    // most recently first, so remember every datasource SQL is executed against.
+    useWorkspaceStore.getState().recordExecutedDataSource(params.dataSourceId);
     const executeSqlParams: ISqlEditorExecuteRequest = {
       dataSourceId: params.dataSourceId,
       databaseName: params.databaseName,

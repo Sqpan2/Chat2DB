@@ -10,6 +10,11 @@ export interface ConfigState {
    * persisted layout must keep its current shape.
    */
   resultDockHeights: Record<string, number | string>;
+  /**
+   * Datasources this session ran SQL against, most recent first. Completion in a
+   * console with no datasource selected suggests these before the rest.
+   */
+  recentExecutedDataSourceIds: number[];
 }
 
 export const initConfigState: ConfigState = {
@@ -20,4 +25,5 @@ export const initConfigState: ConfigState = {
     panelRightWidth: 300,
   },
   resultDockHeights: {},
+  recentExecutedDataSourceIds: [],
 };
