@@ -1,5 +1,6 @@
 import { openSchemaSyncModal } from '@/blocks/NewTree/functions/schemaSync';
 import {
+  createAggregateSavedConsolesNode,
   ILoadDataOptions,
   ILoadDataResult,
   normalizeTreeNodeLoadResult,
@@ -281,7 +282,9 @@ export const createTreeAction: StateCreator<TreeStore, [['zustand/devtools', nev
           treeNodeLoadCoordinator.invalidateAll();
           set({ currentLoadingTreeNode: null });
         }
-        const freshTreeData = neatenTreeData(result.items);
+        // Prepend the root-level aggregated consoles catalogue so saved queries from
+        // every data source are reachable from the top of the tree.
+        const freshTreeData = [createAggregateSavedConsolesNode(), ...neatenTreeData(result.items)];
         const treeData = resolveLoadedTreeData(
           freshTreeData,
           get().treeData,

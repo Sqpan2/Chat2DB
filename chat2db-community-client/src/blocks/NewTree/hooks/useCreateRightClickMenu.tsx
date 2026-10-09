@@ -21,6 +21,7 @@ import { canImportExport } from '@/utils/env';
 import { useGlobalStore } from '@/store/global';
 import { useImportExportStore } from '@/store/importExport';
 import { useTreeStore } from '@/store/tree';
+import { AGGREGATE_SAVED_CONSOLES_KEY } from '@/store/tree/aggregateSavedConsoles';
 import { useWorkspaceStore } from '@/store/workspace';
 
 import aiService from '@/service/ai';
@@ -655,6 +656,18 @@ export const useCreateRightClickMenu = () => {
           handleLoadData(treeNodeData, {
             refresh: true,
           });
+          // Refreshing a data source also refreshes the root-level aggregated consoles
+          // catalogue so its saved-query list stays in sync.
+          if (treeNodeType === TreeNodeType.DATA_SOURCE) {
+            const aggregateNode = treeData?.find((node) => node.key === AGGREGATE_SAVED_CONSOLES_KEY);
+            if (aggregateNode) {
+              handleLoadData(aggregateNode, {
+                refresh: true,
+                closeExpandTreeNode: true,
+                preserveInteraction: true,
+              }).catch(() => undefined);
+            }
+          }
         },
         discard: treeNodeType === TreeNodeType.DATABASE && !supportSchema,
       },
@@ -674,7 +687,7 @@ export const useCreateRightClickMenu = () => {
             schemaName,
           });
         },
-        discard: !hasPermission,
+        discard: !hasPermission || Boolean(extraParams.aggregateConsoles),
       },
 
       // View all tables.

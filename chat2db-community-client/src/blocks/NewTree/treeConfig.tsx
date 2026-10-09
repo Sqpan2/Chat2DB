@@ -11,6 +11,11 @@ import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import { v4 as uuid } from 'uuid';
 import { createSavedConsoleTreeNodeKey } from '@/store/tree/backgroundRefresh';
 import {
+  buildAggregateSavedConsoleChildren,
+  buildAggregateSavedConsolesNode,
+  isAggregateSavedConsolesExtraParams,
+} from '@/store/tree/aggregateSavedConsoles';
+import {
   createActiveTransactionsTreeNodeKey,
   createMonitorTreeNodeKey,
   MONITOR_TREE_ITEMS,
@@ -182,6 +187,10 @@ function createSaveConsolesNode(extraParams: any): TreeNodeData {
     isLeaf: false,
     extraParams,
   };
+}
+
+export function createAggregateSavedConsolesNode(): TreeNodeData {
+  return buildAggregateSavedConsolesNode(i18n('common.text.consoles'));
 }
 
 function createMonitorNode(extraParams: any): TreeNodeData {
@@ -1377,6 +1386,28 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
 
   [TreeNodeType.SAVE_CONSOLES]: {
     getChildren: (extraParams) => {
+      // The root-level aggregate catalogue lists saved consoles across all data sources.
+      if (isAggregateSavedConsolesExtraParams(extraParams)) {
+        return new Promise((r: (value: TreeNodeLoadResult) => void, j) => {
+          historyService
+            .getConsoleList({
+              pageNo: 1,
+              pageSize: 1000,
+              status: ConsoleStatus.RELEASE,
+              type: WorkspaceTabType.CONSOLE,
+              orderByDesc: true,
+            })
+            .then((res) => {
+              r({
+                children: buildAggregateSavedConsoleChildren(res?.data, extraParams),
+                total: res.total,
+              });
+            })
+            .catch(() => {
+              j();
+            });
+        });
+      }
       return new Promise((r: (value: TreeNodeLoadResult) => void, j) => {
         const { dataSourceId, databaseName, schemaName } = extraParams;
         historyService
