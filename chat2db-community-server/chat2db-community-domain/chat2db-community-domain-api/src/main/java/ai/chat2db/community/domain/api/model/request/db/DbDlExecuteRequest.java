@@ -1,7 +1,10 @@
 package ai.chat2db.community.domain.api.model.request.db;
 
 
+import ai.chat2db.community.domain.api.model.completion.SqlCompletionScope;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * Internal carrier populated after endpoint-specific request validation.
@@ -48,4 +51,10 @@ public class DbDlExecuteRequest {
     private Boolean errorContinue;
 
     private boolean explain;
+
+    /**
+     * Datasources the console can reach besides its own binding, most relevant first. They are the
+     * search space for routing a statement to a target that actually holds its tables.
+     */
+    private List<SqlCompletionScope> scopes;
 }

@@ -9,8 +9,10 @@ import {
   createDataSourceExecutionSnapshotRegistry,
   getDataSourceExecutionSnapshot,
   getDataSourceExecutionTargetLabel,
+  overrideDataSourceExecutionTarget,
   registerDataSourceExecutionSnapshot,
   releaseDataSourceExecutionSnapshot,
+  type DataSourceExecutionSnapshot,
 } from './dataSourceExecutionSnapshot';
 
 const registry = createDataSourceExecutionSnapshotRegistry();
@@ -112,4 +114,36 @@ assert.equal(getDataSourceExecutionSnapshot(registry, { executionSequence: 5 }),
 assert.equal(attachDataSourceExecutionId(registry, 99, 'missing-execution'), undefined);
 assert.equal(getDataSourceExecutionTargetLabel(undefined), '');
 
+
+const runSnapshot: DataSourceExecutionSnapshot = {
+  dataSourceId: 5,
+  dataSourceName: 'test-ajk02',
+  databaseName: 'db58_hbg_governance',
+  databaseType: 'MYSQL' as DatabaseTypeCode,
+  startedAt: 1000,
+};
+
+const untouched = overrideDataSourceExecutionTarget(runSnapshot, undefined);
+assert.equal(untouched, runSnapshot, 'a result without an execution context keeps the run snapshot');
+
+const localContext = overrideDataSourceExecutionTarget(runSnapshot, {
+  databaseName: 'db58_hbg_governance',
+  dataSourceId: 5,
+});
+assert.equal(localContext, runSnapshot, 'a result from the bound datasource keeps the run snapshot');
+
+const routed = overrideDataSourceExecutionTarget(runSnapshot, {
+  dataSourceId: 1791514442495999,
+  dataSourceName: 'test-ajk-user02',
+  databaseName: 'db58_hbg_ccf',
+  autoLocated: true,
+});
+assert.notEqual(routed, runSnapshot, 'a routed result reports the target it ran on');
+assert.equal(routed?.dataSourceId, 1791514442495999);
+assert.equal(routed?.dataSourceName, 'test-ajk-user02');
+assert.equal(routed?.databaseName, 'db58_hbg_ccf');
+assert.equal(routed?.databaseType, 'MYSQL' as DatabaseTypeCode, 'the dialect of the run is kept');
+assert.equal(routed?.environmentId, undefined, 'the routed target carries no environment of its own');
+
 console.log('Data source execution snapshot tests passed');
+

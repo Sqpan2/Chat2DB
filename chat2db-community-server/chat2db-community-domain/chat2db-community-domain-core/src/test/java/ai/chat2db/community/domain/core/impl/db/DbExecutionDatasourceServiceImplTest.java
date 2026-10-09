@@ -11,6 +11,7 @@ import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContext
 import ai.chat2db.community.domain.api.model.request.sql.DbExecutionDatasourceRequest;
 import ai.chat2db.community.domain.api.model.sql.ExecutionDatasource;
 import ai.chat2db.community.domain.api.model.sql.SimpleSqlStatement;
+import ai.chat2db.community.domain.api.model.sql.StatementExecutionTarget;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.domain.api.service.db.IDbDatabaseService;
 import ai.chat2db.community.domain.api.service.db.IDbSqlService;
@@ -283,6 +284,78 @@ class DbExecutionDatasourceServiceImplTest {
                 "relocating a console with no datasource is not covered yet");
     }
 
+    @Test
+    void routesEachStatementToTheDatasourceHoldingItsTables() {
+        World world = new World();
+        long bound = world.datasource("test-ajk02").database("db58_hbg_governance", "video_base_info").id();
+        World.Datasource ccf = world.datasource("test-ajk-user02").database("db58_hbg_ccf",
+                "review_orders", "review_task");
+        world.scopes.add(SqlCompletionScope.of(ccf.id(), null, null));
+        String script = "SELECT * FROM video_base_info;\nSELECT * FROM review_orders;\nSELECT * FROM review_task;";
+        world.parseScript(script,
+                new World.ParsedStatement(SqlTypeEnum.SELECT.name(), new String[] {"video_base_info"}, null),
+                new World.ParsedStatement(SqlTypeEnum.SELECT.name(), new String[] {"review_orders"}, null),
+                new World.ParsedStatement(SqlTypeEnum.SELECT.name(), new String[] {"review_task"}, null));
+
+        List<StatementExecutionTarget> targets =
+                world.resolveStatementTargets(bound, "db58_hbg_governance", script);
+
+        assertEquals(3, targets.size());
+        StatementExecutionTarget first = targets.get(0);
+        assertFalse(first.isRelocated(), "the bound database already holds its table");
+        assertNull(first.getDataSourceId());
+        assertNull(first.getDatabaseName());
+        assertEquals(1, first.getSequence());
+
+        StatementExecutionTarget second = targets.get(1);
+        assertTrue(second.isRelocated(), "review_orders lives on another datasource");
+        assertEquals(ccf.id(), second.getDataSourceId());
+        assertEquals("test-ajk-user02", second.getDataSourceName());
+        assertEquals("db58_hbg_ccf", second.getDatabaseName());
+        assertEquals(2, second.getSequence());
+
+        StatementExecutionTarget third = targets.get(2);
+        assertTrue(third.isRelocated(), "review_task lives on the same other datasource");
+        assertEquals(ccf.id(), third.getDataSourceId());
+        assertEquals("db58_hbg_ccf", third.getDatabaseName());
+        assertEquals(3, third.getSequence());
+    }
+
+    @Test
+    void refusesToRouteAScriptHoldingAWrite() {
+        World world = new World();
+        long bound = world.datasource("test-ajk02").database("db58_hbg_governance", "video_base_info").id();
+        World.Datasource ccf = world.datasource("test-ajk-user02").database("db58_hbg_ccf", "review_orders");
+        world.scopes.add(SqlCompletionScope.of(ccf.id(), null, null));
+        String script = "SELECT * FROM video_base_info;\nUPDATE review_orders SET a = 1;";
+        world.parseScript(script,
+                new World.ParsedStatement(SqlTypeEnum.SELECT.name(), new String[] {"video_base_info"}, null),
+                new World.ParsedStatement(SqlTypeEnum.UPDATE.name(), new String[] {"review_orders"}, null));
+
+        List<StatementExecutionTarget> targets =
+                world.resolveStatementTargets(bound, "db58_hbg_governance", script);
+
+        assertTrue(targets.isEmpty(), "a write anywhere in the script keeps the whole script on its binding");
+    }
+
+    @Test
+    void refusesToRouteWhenAStatementNamesItsOwnDatabase() {
+        World world = new World();
+        long bound = world.datasource("test-ajk02").database("db58_hbg_governance", "video_base_info").id();
+        World.Datasource ccf = world.datasource("test-ajk-user02").database("db58_hbg_ccf", "review_orders");
+        world.scopes.add(SqlCompletionScope.of(ccf.id(), null, null));
+        String script = "SELECT * FROM video_base_info;\nSELECT * FROM other_db.review_orders;";
+        world.parseScript(script,
+                new World.ParsedStatement(SqlTypeEnum.SELECT.name(), new String[] {"video_base_info"}, null),
+                new World.ParsedStatement(SqlTypeEnum.SELECT.name(), new String[] {"review_orders"},
+                        new String[] {"other_db", null}));
+
+        List<StatementExecutionTarget> targets =
+                world.resolveStatementTargets(bound, "db58_hbg_governance", script);
+
+        assertTrue(targets.isEmpty(), "a statement that already names its database keeps the whole script");
+    }
+
     private static final String DB_TYPE = "MYSQL";
 
     private static final List<String> bindLog = new ArrayList<>();
@@ -322,6 +395,10 @@ class DbExecutionDatasourceServiceImplTest {
                     new String[] {databaseName, schemaName}));
         }
 
+        private void parseScript(String script, ParsedStatement... statements) {
+            parses.put(script, new ParsedStatement(null, new String[0], null, statements));
+        }
+
         private DbExecutionDatasourceRequest request(String sql) {
             DbExecutionDatasourceRequest request = new DbExecutionDatasourceRequest();
             request.setConsoleId(1L);
@@ -335,6 +412,13 @@ class DbExecutionDatasourceServiceImplTest {
             request.setDataSourceId(dataSourceId);
             request.setDatabaseName(databaseName);
             return service().resolve(request);
+        }
+
+        private List<StatementExecutionTarget> resolveStatementTargets(long dataSourceId, String databaseName, String sql) {
+            DbExecutionDatasourceRequest request = request(sql);
+            request.setDataSourceId(dataSourceId);
+            request.setDatabaseName(databaseName);
+            return service().resolveStatementTargets(request);
         }
 
         private DbExecutionDatasourceServiceImpl service() {
@@ -353,22 +437,33 @@ class DbExecutionDatasourceServiceImplTest {
                         if (parsed == null) {
                             throw new IllegalStateException("the test did not register a parse for: " + sql);
                         }
-                        SimpleSqlStatement statement = new SimpleSqlStatement();
-                        statement.setSql(sql);
-                        statement.setSqlType(parsed.sqlType());
-                        List<SimpleSqlStatement.SimpleTable> tables = new ArrayList<>();
-                        for (String tableName : parsed.tableNames()) {
-                            SimpleSqlStatement.SimpleTable table = new SimpleSqlStatement.SimpleTable();
-                            table.setTableName(tableName);
-                            if (parsed.qualifiers() != null) {
-                                table.setDatabaseName(parsed.qualifiers()[0]);
-                                table.setSchemaName(parsed.qualifiers()[1]);
+                        if (parsed.statements() != null) {
+                            List<SimpleSqlStatement> statements = new ArrayList<>(parsed.statements().length);
+                            for (ParsedStatement child : parsed.statements()) {
+                                statements.add(statement(sql, child));
                             }
-                            tables.add(table);
+                            return statements;
                         }
-                        statement.setTables(tables);
-                        return List.of(statement);
+                        return List.of(statement(sql, parsed));
                     });
+        }
+
+        private SimpleSqlStatement statement(String sql, ParsedStatement parsed) {
+            SimpleSqlStatement statement = new SimpleSqlStatement();
+            statement.setSql(sql);
+            statement.setSqlType(parsed.sqlType());
+            List<SimpleSqlStatement.SimpleTable> tables = new ArrayList<>();
+            for (String tableName : parsed.tableNames()) {
+                SimpleSqlStatement.SimpleTable table = new SimpleSqlStatement.SimpleTable();
+                table.setTableName(tableName);
+                if (parsed.qualifiers() != null) {
+                    table.setDatabaseName(parsed.qualifiers()[0]);
+                    table.setSchemaName(parsed.qualifiers()[1]);
+                }
+                tables.add(table);
+            }
+            statement.setTables(tables);
+            return statement;
         }
 
         private IDbDatabaseService databaseService() {
@@ -461,7 +556,12 @@ class DbExecutionDatasourceServiceImplTest {
         }
 
         /** What the registered parse reports. */
-        private record ParsedStatement(String sqlType, String[] tableNames, String[] qualifiers) {
+        record ParsedStatement(String sqlType, String[] tableNames, String[] qualifiers,
+                ParsedStatement[] statements) {
+
+            ParsedStatement(String sqlType, String[] tableNames, String[] qualifiers) {
+                this(sqlType, tableNames, qualifiers, null);
+            }
         }
     }
 

@@ -3,6 +3,7 @@ import { DatabaseTypeCode } from '@/constants/common';
 import { TreeNodeType } from '@/constants/tree';
 import type { IBoundInfo, TreeNodeData } from '@/typings';
 import {
+  createRequestStopSignal,
   findDataSourceNode,
   isReadOnlyQuery,
   relocateBoundInfo,
@@ -107,5 +108,40 @@ const withoutDatabase = relocateBoundInfo(
   { dataSourceId: 7, dataSourceName: 'test-ajk-user02' },
 );
 assert.equal(withoutDatabase.databaseName, undefined, 'an answer without a database leaves the console without one');
+
+const webStop = createRequestStopSignal(false);
+assert.ok(webStop.signal instanceof AbortSignal, 'the web cancels a request through an AbortSignal');
+let aborted = false;
+webStop.signal?.addEventListener('abort', () => {
+  aborted = true;
+});
+webStop.cancel();
+assert.equal(aborted, true, 'cancelling aborts the web signal');
+
+const cancelledDesktopRequests: Array<{ id: string; reason: any }> = [];
+const desktopStop = createRequestStopSignal(true, ({ id, reject }) => {
+  assert.equal(typeof id, 'string', 'the bridge hands over the pending request id');
+  assert.equal(typeof reject, 'function', 'the bridge hands over the pending request reject');
+  reject({ message: `cancelled:${id}` });
+  cancelledDesktopRequests.push({ id, reason: 'rejected' });
+});
+assert.equal(typeof desktopStop.signal, 'function', 'the desktop bridge only understands its own callback');
+assert.equal(
+  desktopStop.signal instanceof AbortSignal,
+  false,
+  'an AbortSignal would crash the desktop request with "E.call is not a function"',
+);
+desktopStop.cancel();
+assert.equal(cancelledDesktopRequests.length, 0, 'cancelling before the bridge registers the request is a no-op');
+const registered: Array<{ id: string; reject: (reason?: any) => void }> = [];
+(desktopStop.signal as (params: { id: string; reject: (reason?: any) => void }) => void)({
+  id: 'request-1',
+  reject: (reason) => registered.push({ id: 'request-1', reason }),
+});
+desktopStop.cancel();
+assert.equal(registered.length, 1, 'cancelling rejects the pending desktop request');
+assert.deepEqual(registered[0].reason, { message: 'cancelled:request-1' });
+desktopStop.cancel();
+assert.equal(registered.length, 1, 'a second cancellation does not reject the request twice');
 
 console.log('Execution relocation tests passed');

@@ -3,11 +3,14 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.domain.api.model.sql.SqlExecuteRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbStreamingExecuteRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbDlExecuteRequest;
+import ai.chat2db.community.domain.api.model.sql.StatementExecutionTarget;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionContext;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionOperation;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionPlan;
 import ai.chat2db.community.domain.api.service.db.IDbSqlCommandService;
 import ai.chat2db.community.domain.api.service.db.IDbSqlExecutionService;
+import ai.chat2db.community.domain.api.service.db.IDbStatementRoutingExecutor;
+import ai.chat2db.community.domain.api.service.db.ISqlExecutionResultConsumer;
 import ai.chat2db.community.domain.core.impl.db.extension.SqlExecutionPolicyManager;
 import ai.chat2db.community.tools.util.I18nUtils;
 import ai.chat2db.spi.ICommandExecutor;
@@ -18,17 +21,21 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
+import java.util.List;
 
 @Service
 public class DbSqlExecutionServiceImpl implements IDbSqlExecutionService {
 
     private final IDbSqlCommandService sqlSqlExecuteRequestService;
     private final SqlExecutionPolicyManager sqlExecutionPolicyManager;
+    private final IDbStatementRoutingExecutor statementRoutingExecutor;
 
     public DbSqlExecutionServiceImpl(IDbSqlCommandService sqlSqlExecuteRequestService,
-            SqlExecutionPolicyManager sqlExecutionPolicyManager) {
+            SqlExecutionPolicyManager sqlExecutionPolicyManager,
+            IDbStatementRoutingExecutor statementRoutingExecutor) {
         this.sqlSqlExecuteRequestService = sqlSqlExecuteRequestService;
         this.sqlExecutionPolicyManager = sqlExecutionPolicyManager;
+        this.statementRoutingExecutor = statementRoutingExecutor;
     }
 
     @Override
@@ -51,10 +58,27 @@ public class DbSqlExecutionServiceImpl implements IDbSqlExecutionService {
         command.setScript(executionPlan.getSql());
         sqlExecutionPolicyManager.applyMaxRows(command, executionPlan);
         sqlExecutionPolicyManager.beforeExecute(executionPlan);
-        sqlExecutor.executeStreaming(command,
-                sqlExecutionPolicyManager.wrapStreamingConsumer(executionPlan,
-                        executeStreamingRequest.getConsumer()),
-                executeStreamingRequest.getStatementListener(), executeStreamingRequest.getCancellation());
+        ISqlExecutionResultConsumer consumer = sqlExecutionPolicyManager.wrapStreamingConsumer(executionPlan,
+                executeStreamingRequest.getConsumer());
+        // A read-only script whose statements read different databases streams each statement where its
+        // tables are; anything unroutable keeps streaming as one piece on the console's binding.
+        List<StatementExecutionTarget> routingPlan = statementRoutingExecutor.plan(request, executionPlan.getSql());
+        if (routingPlan.isEmpty()) {
+            sqlExecutor.executeStreaming(command, consumer,
+                    executeStreamingRequest.getStatementListener(), executeStreamingRequest.getCancellation());
+        } else {
+            try {
+                statementRoutingExecutor.stream(request, command, routingPlan,
+                        executeStreamingRequest.getCancellation(), consumer,
+                        (single, routingConsumer) -> sqlExecutor.executeStreaming(single, routingConsumer,
+                                executeStreamingRequest.getStatementListener(),
+                                executeStreamingRequest.getCancellation()));
+            } catch (SQLException e) {
+                throw e;
+            } catch (Exception e) { // impl-contract: fallback - only the executor's failures reach this point.
+                throw new SQLException(e.getMessage(), e);
+            }
+        }
     }
 
     private SqlExecutionContext executionContext(DbDlExecuteRequest request) {

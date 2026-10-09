@@ -1,10 +1,14 @@
 package ai.chat2db.community.web.api.model.request.db;
 
+import ai.chat2db.community.domain.api.model.completion.SqlCompletionScope;
 import ai.chat2db.community.web.api.model.request.data.source.IDataSourceSchemaRequestInfo;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+
+import java.util.List;
 
 @Data
 public class SqlEditorExecuteRequest implements IDataSourceSchemaRequestInfo {
@@ -36,4 +40,11 @@ public class SqlEditorExecuteRequest implements IDataSourceSchemaRequestInfo {
     private Boolean errorContinue;
 
     private boolean explain;
+
+    /**
+     * Datasources the console can reach besides its own binding, most relevant first. They widen the
+     * search when a statement names tables the bound datasource does not hold.
+     */
+    @Valid
+    private List<SqlCompletionScope> scopes;
 }

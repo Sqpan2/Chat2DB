@@ -9,9 +9,11 @@ import ai.chat2db.community.domain.api.model.result.ExecuteResponse;
 import ai.chat2db.community.domain.api.model.result.Header;
 import ai.chat2db.community.domain.api.model.result.ResultCell;
 import ai.chat2db.community.domain.api.model.sql.SqlExecuteRequest;
+import ai.chat2db.community.domain.api.model.sql.StatementExecutionTarget;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionContext;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionPlan;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlResultColumnContext;
+import ai.chat2db.community.domain.api.service.db.IDbStatementRoutingExecutor;
 import ai.chat2db.community.domain.api.service.db.ISqlExecutionCancellation;
 import ai.chat2db.community.domain.api.service.db.ISqlExecutionResultConsumer;
 import ai.chat2db.community.domain.api.service.db.ISqlExecutionStatementListener;
@@ -133,7 +135,29 @@ class DbSqlExecutionServicePolicyTest {
     private DbSqlExecutionServiceImpl service(ISqlExecutionPolicy policy, List<String> events) {
         Chat2DBContext.PLUGIN_MAP.put(TEST_DB_TYPE, plugin(streamingExecutor(events)));
         return new DbSqlExecutionServiceImpl(this::toCommand,
-                new SqlExecutionPolicyManager(List.of(policy)));
+                new SqlExecutionPolicyManager(List.of(policy)), noRoutingExecutor());
+    }
+
+    private IDbStatementRoutingExecutor noRoutingExecutor() {
+        return new IDbStatementRoutingExecutor() {
+            @Override
+            public List<StatementExecutionTarget> plan(DbDlExecuteRequest request, String processedSql) {
+                return List.of();
+            }
+
+            @Override
+            public List<ExecuteResponse> execute(DbDlExecuteRequest request, SqlExecuteRequest template,
+                    List<StatementExecutionTarget> routingPlan, StatementRunner runner) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void stream(DbDlExecuteRequest request, SqlExecuteRequest template,
+                    List<StatementExecutionTarget> routingPlan, ISqlExecutionCancellation cancellation,
+                    ISqlExecutionResultConsumer consumer, StreamingStatementRunner runner) {
+                throw new UnsupportedOperationException();
+            }
+        };
     }
 
     private DbStreamingExecuteRequest request(String executionId, ISqlExecutionResultConsumer consumer,

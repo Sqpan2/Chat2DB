@@ -74,6 +74,59 @@ export function findDataSourceNode(
 }
 
 /**
+ * What the desktop bridge needs to stop a pending request: it calls the "signal" it was given with the
+ * pending request's id and reject, and the caller cancels through them.
+ */
+export interface RequestStopParams {
+  id: string;
+  reject: (reason?: any) => void;
+}
+
+/**
+ * A way to give up on one request: the value the request's second parameter carries, plus the call that
+ * stops it. The web takes a DOM AbortSignal; the desktop bridge only understands its own callback.
+ */
+export interface RequestStopSignal {
+  signal: AbortSignal | ((params: RequestStopParams) => void) | null;
+  cancel: () => void;
+}
+
+/**
+ * The stop signal for one request, built for the runtime it runs in.
+ *
+ * On the web an AbortController does both jobs. On the desktop the bridge calls the "signal" with the
+ * pending request's id and reject; cancelling removes the pending request and rejects it, the same way
+ * useAbortRequest does. Passing a DOM AbortSignal there crashes the request with "E.call is not a
+ * function", which silently turned every datasource lookup into a fallback to the console's binding.
+ *
+ * @param isDesktopRuntime whether the request runs inside the desktop app.
+ * @param cancelPendingRequest drops a pending desktop request, given the id and reject the bridge passed.
+ */
+export function createRequestStopSignal(
+  isDesktopRuntime: boolean,
+  cancelPendingRequest?: (params: RequestStopParams) => void,
+): RequestStopSignal {
+  if (isDesktopRuntime) {
+    let pending: RequestStopParams | null = null;
+    return {
+      signal: (params: RequestStopParams) => {
+        pending = params;
+      },
+      cancel: () => {
+        if (!pending) {
+          return;
+        }
+        const current = pending;
+        pending = null;
+        cancelPendingRequest?.(current);
+      },
+    };
+  }
+  const controller = new AbortController();
+  return { signal: controller.signal, cancel: () => controller.abort() };
+}
+
+/**
  * The statement without the comments and the blank space in front of it, so the first word is the word
  * that decides whether it is a query.
  */

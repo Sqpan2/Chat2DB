@@ -21,9 +21,11 @@ import ai.chat2db.spi.model.request.SqlStatementExecuteRequest;
 import ai.chat2db.community.domain.api.model.result.*;
 import ai.chat2db.community.domain.api.model.sql.SqlExecuteRequest;
 import ai.chat2db.community.domain.api.model.sql.SimpleSqlStatement;
+import ai.chat2db.community.domain.api.model.sql.StatementExecutionTarget;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionContext;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionOperation;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionPlan;
+import ai.chat2db.community.domain.api.service.db.IDbStatementRoutingExecutor;
 import ai.chat2db.community.domain.core.impl.db.extension.SqlExecutionPolicyManager;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
@@ -55,11 +57,15 @@ public class DbDlTemplateServiceImpl implements IDbDlTemplateService {
 
     private final SqlExecutionPolicyManager sqlExecutionPolicyManager;
 
+    private final IDbStatementRoutingExecutor statementRoutingExecutor;
+
     public DbDlTemplateServiceImpl(ExecuteResultHeaderEnhancer executeResultHeaderEnhancer,
-            CommandConverter commandConverter, SqlExecutionPolicyManager sqlExecutionPolicyManager) {
+            CommandConverter commandConverter, SqlExecutionPolicyManager sqlExecutionPolicyManager,
+            IDbStatementRoutingExecutor statementRoutingExecutor) {
         this.executeResultHeaderEnhancer = executeResultHeaderEnhancer;
         this.commandConverter = commandConverter;
         this.sqlExecutionPolicyManager = sqlExecutionPolicyManager;
+        this.statementRoutingExecutor = statementRoutingExecutor;
     }
 
     private static final String LINE_SEPARATOR = "\r|\n|\r\n";
@@ -76,7 +82,22 @@ public class DbDlTemplateServiceImpl implements IDbDlTemplateService {
         command.setScript(executionPlan.getSql());
         sqlExecutionPolicyManager.applyMaxRows(command, executionPlan);
         sqlExecutionPolicyManager.beforeExecute(executionPlan);
-        List<ExecuteResponse> results = executor.execute(command);
+        // A read-only script whose statements read different databases runs each statement where its
+        // tables are; anything unroutable keeps running as one piece on the console's binding.
+        List<StatementExecutionTarget> routingPlan = statementRoutingExecutor.plan(param, executionPlan.getSql());
+        List<ExecuteResponse> results;
+        if (routingPlan.isEmpty()) {
+            results = executor.execute(command);
+        } else {
+            try {
+                results = statementRoutingExecutor.execute(param, command, routingPlan,
+                        single -> executor.execute(single));
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) { // impl-contract: fallback - the executor only fails with runtime errors here.
+                throw new RuntimeException(e);
+            }
+        }
         long s2 = System.currentTimeMillis();
         log.info("execute_sql cost time:{}", s2 - s1);
         List<ExecuteResponse> r = reBuildHeader(results, param.getDataSourceId(), param.getSchemaName(),
@@ -323,11 +344,19 @@ public class DbDlTemplateServiceImpl implements IDbDlTemplateService {
     private List<ExecuteResponse> reBuildHeader(List<ExecuteResponse> results, Long dataSourceId, String schemaName,
                                                     String databaseName) {
         for (ExecuteResponse executeResult : results) {
+            // A routed result belongs to the target it ran on, not to the console's binding.
+            ExecutionContext context = executeResult.getExecutionContext();
+            Long resultDataSourceId = context == null || context.getDataSourceId() == null
+                    ? dataSourceId : context.getDataSourceId();
+            String resultSchemaName = context == null || context.getSchemaName() == null
+                    ? schemaName : context.getSchemaName();
+            String resultDatabaseName = context == null || StringUtils.isBlank(context.getDatabaseName())
+                    ? databaseName : context.getDatabaseName();
             DbExecuteResultEnhanceRequest enhanceExecuteResultRequest = new DbExecuteResultEnhanceRequest();
             enhanceExecuteResultRequest.setExecuteResult(executeResult);
-            enhanceExecuteResultRequest.setDataSourceId(dataSourceId);
-            enhanceExecuteResultRequest.setDatabaseName(databaseName);
-            enhanceExecuteResultRequest.setSchemaName(schemaName);
+            enhanceExecuteResultRequest.setDataSourceId(resultDataSourceId);
+            enhanceExecuteResultRequest.setDatabaseName(resultDatabaseName);
+            enhanceExecuteResultRequest.setSchemaName(resultSchemaName);
             executeResultHeaderEnhancer.enhance(enhanceExecuteResultRequest);
         }
         return results;

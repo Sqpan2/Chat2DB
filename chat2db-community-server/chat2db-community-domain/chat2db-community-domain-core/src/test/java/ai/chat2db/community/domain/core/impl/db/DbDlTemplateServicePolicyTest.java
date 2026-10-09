@@ -12,9 +12,13 @@ import ai.chat2db.community.domain.api.model.result.Header;
 import ai.chat2db.community.domain.api.model.result.QueryResponse;
 import ai.chat2db.community.domain.api.model.result.ResultCell;
 import ai.chat2db.community.domain.api.model.sql.SqlExecuteRequest;
+import ai.chat2db.community.domain.api.model.sql.StatementExecutionTarget;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionContext;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionPlan;
 import ai.chat2db.community.domain.api.model.sql.extension.SqlResultColumnContext;
+import ai.chat2db.community.domain.api.service.db.IDbStatementRoutingExecutor;
+import ai.chat2db.community.domain.api.service.db.ISqlExecutionCancellation;
+import ai.chat2db.community.domain.api.service.db.ISqlExecutionResultConsumer;
 import ai.chat2db.community.domain.api.service.db.extension.ISqlExecutionPolicy;
 import ai.chat2db.community.domain.core.converter.CommandConverter;
 import ai.chat2db.community.domain.core.impl.db.extension.SqlExecutionPolicyManager;
@@ -99,7 +103,7 @@ class DbDlTemplateServicePolicyTest {
         };
         DbDlTemplateServiceImpl service = new DbDlTemplateServiceImpl(
                 new ExecuteResultHeaderEnhancer(null), converter(),
-                new SqlExecutionPolicyManager(List.of(policy)));
+                new SqlExecutionPolicyManager(List.of(policy)), noRoutingExecutor());
         DbDlExecuteRequest request = new DbDlExecuteRequest();
         request.setSql("select id, secret from orders");
         request.setDataSourceId(7L);
@@ -220,7 +224,29 @@ class DbDlTemplateServicePolicyTest {
 
     private DbDlTemplateServiceImpl service(ISqlExecutionPolicy policy) {
         return new DbDlTemplateServiceImpl(new ExecuteResultHeaderEnhancer(null), converter(),
-                new SqlExecutionPolicyManager(List.of(policy)));
+                new SqlExecutionPolicyManager(List.of(policy)), noRoutingExecutor());
+    }
+
+    private IDbStatementRoutingExecutor noRoutingExecutor() {
+        return new IDbStatementRoutingExecutor() {
+            @Override
+            public List<StatementExecutionTarget> plan(DbDlExecuteRequest request, String processedSql) {
+                return List.of();
+            }
+
+            @Override
+            public List<ExecuteResponse> execute(DbDlExecuteRequest request, SqlExecuteRequest template,
+                    List<StatementExecutionTarget> routingPlan, StatementRunner runner) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void stream(DbDlExecuteRequest request, SqlExecuteRequest template,
+                    List<StatementExecutionTarget> routingPlan, ISqlExecutionCancellation cancellation,
+                    ISqlExecutionResultConsumer consumer, StreamingStatementRunner runner) {
+                throw new UnsupportedOperationException();
+            }
+        };
     }
 
     private DbDlExecuteRequest request(String sql) {

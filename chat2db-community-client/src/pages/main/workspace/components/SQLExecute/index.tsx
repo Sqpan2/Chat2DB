@@ -60,6 +60,7 @@ import {
 } from '@/components/SQLEditor/editor/SQLEditorWithOperation';
 import { createLiveSqlEditorHandle } from './liveEditorHandle';
 import {
+  createRequestStopSignal,
   findDataSourceNode,
   relocateBoundInfo,
   shouldResolveExecutionDatasource,
@@ -67,6 +68,7 @@ import {
 import { resolveExecutionDatasourceScopes } from '@/components/SQLEditor/core/sqlCompletionScopes';
 import SQLParserService from '@/service/sqlParser';
 import type { IExecutionDatasource } from '@/typings/sqlParser';
+import { useGlobalStore } from '@/store/global';
 import { mergeLatestLocalFileBoundInfo } from './liveEditorBoundInfo';
 import SplitPaneUnpack from '@/components/SplitPaneUnpack';
 import useSqlExecutor from '@/hooks/useSqlExecutor';
@@ -102,6 +104,7 @@ import {
   createDataSourceExecutionSnapshot,
   createDataSourceExecutionSnapshotRegistry,
   getDataSourceExecutionSnapshot,
+  overrideDataSourceExecutionTarget,
   registerDataSourceExecutionSnapshot,
   releaseDataSourceExecutionSnapshot,
   type DataSourceExecutionSnapshot,
@@ -255,8 +258,17 @@ async function requestExecutionDatasource(
   sql: string,
   scopes: Array<{ dataSourceId: number }>,
 ): Promise<IExecutionDatasource | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), EXECUTION_DATASOURCE_RESOLVE_TIMEOUT_MS);
+  // The web cancels through an AbortSignal; the desktop bridge only understands its own callback.
+  // Handing it an AbortSignal crashed the request with "E.call is not a function" and every lookup
+  // silently fell back to the console's binding.
+  const stop = createRequestStopSignal(
+    isDesktop,
+    ({ id, reject }) => {
+      useGlobalStore.getState().removeCommandLineRequestListItem(id);
+      reject({ message: 'signal is aborted without reason' });
+    },
+  );
+  const timer = setTimeout(stop.cancel, EXECUTION_DATASOURCE_RESOLVE_TIMEOUT_MS);
   try {
     const resolved = await SQLParserService.queryExecutionDatasource(
       {
@@ -267,7 +279,7 @@ async function requestExecutionDatasource(
         schemaName: boundInfo.schemaName,
         scopes,
       },
-      { signal: controller.signal },
+      { signal: stop.signal },
     );
     return resolved?.dataSourceId ? resolved : null;
   } catch (error) {
@@ -644,7 +656,9 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
             extra: {
               ...(resultWithIdentity.extra || {}),
               executionSequence,
-              executionTarget: executionSnapshot,
+              executionTarget:
+                overrideDataSourceExecutionTarget(executionSnapshot, resultWithIdentity.executionContext) ??
+                executionSnapshot,
               resultKey,
               resultSequence,
             },
@@ -693,7 +707,9 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
           extra: {
             ...(chunkWithIdentity.extra || {}),
             executionSequence,
-            executionTarget: executionSnapshot,
+            executionTarget:
+              overrideDataSourceExecutionTarget(executionSnapshot, chunkWithIdentity.executionContext) ??
+              executionSnapshot,
             resultKey,
             resultSequence,
           },
@@ -737,7 +753,9 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
           extra: {
             ...(resultWithIdentity.extra || {}),
             executionSequence,
-            executionTarget: executionSnapshot,
+            executionTarget:
+              overrideDataSourceExecutionTarget(executionSnapshot, resultWithIdentity.executionContext) ??
+              executionSnapshot,
             resultKey,
             resultSequence,
           },
@@ -1019,6 +1037,11 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
       dataSourceName: executionSnapshot.dataSourceName,
       databaseName: executionSnapshot.databaseName,
       schemaName: executionSnapshot.schemaName,
+      // The backend falls back to these when a statement names tables the binding does not serve.
+      scopes: resolveExecutionDatasourceScopes(boundInfo, {
+        executedDataSourceIds: useWorkspaceStore.getState().recentExecutedDataSourceIds,
+        dataSourceNodes: useTreeStore.getState().dataSourceList || [],
+      }),
     };
     executionParamsBySequenceRef.current[executionSequence] = executeSqlParams;
 
@@ -1081,7 +1104,9 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
             extra: {
               ...(itemWithIdentity.extra || {}),
               executionSequence,
-              executionTarget: executionSnapshot,
+              executionTarget:
+                overrideDataSourceExecutionTarget(executionSnapshot, itemWithIdentity.executionContext) ??
+                executionSnapshot,
               statementSequence,
               resultKey: buildResultKey(executionId, statementSequence, resultSequence),
               resultSequence,

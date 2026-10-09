@@ -460,6 +460,11 @@ function mergeExecutionContext(
     ...context,
     databaseName: mergeContextName(context.databaseName, executionContext, 'databaseName'),
     schemaName: mergeContextName(context.schemaName, executionContext, 'schemaName'),
+    // A routed statement reports the datasource it really ran on; without it a relocated result
+    // would masquerade as one of the console's own binding's.
+    ...(executionContext.dataSourceId !== undefined ? { dataSourceId: executionContext.dataSourceId } : {}),
+    ...(executionContext.dataSourceName ? { dataSourceName: executionContext.dataSourceName } : {}),
+    ...(executionContext.autoLocated ? { autoLocated: true } : {}),
   };
 }
 

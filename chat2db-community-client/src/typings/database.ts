@@ -1,5 +1,6 @@
 import { DatabaseTypeCode, TableDataType } from '@/constants';
 import { SqlTypeEnum } from './sqlParser';
+import type { IExecutionScope } from '@/service/dmlRequest';
 
 // Identify the database context used for SQL execution and metadata queries.
 export interface IDBContextInfo {
@@ -134,6 +135,8 @@ export interface IExecuteSqlParams extends IConsoleReturnExecuteSql {
   consoleId?: number;
   errorContinue?: boolean;
   explain?: boolean;
+  /** Datasources to try when a statement names tables the bound datasource does not hold. */
+  scopes?: IExecutionScope[];
 }
 
 export interface ISqlExecutionMessage {
@@ -157,6 +160,11 @@ export interface IExecutionMetrics {
 export interface IExecutionContext {
   databaseName?: string;
   schemaName?: string;
+  /** The datasource a routed statement really ran against. */
+  dataSourceId?: number;
+  dataSourceName?: string;
+  /** Whether the statement was moved away from the console's binding to reach its tables. */
+  autoLocated?: boolean;
 }
 
 export interface IManageResultData {

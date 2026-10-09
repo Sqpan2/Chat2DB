@@ -1,4 +1,5 @@
 import type { DatabaseTypeCode } from '@/constants';
+import type { IExecutionContext } from '@/typings/database';
 import type { IBoundInfo } from '@/typings';
 
 export interface DataSourceExecutionSnapshot {
@@ -144,4 +145,27 @@ export function getDataSourceExecutionTargetLabel(target?: DataSourceExecutionTa
   ]
     .filter((value): value is string => !!value)
     .join(' / ');
+}
+
+/**
+ * The snapshot of the datasource one result really ran against.
+ *
+ * A routed statement reports the target that served it in its execution context; the result then shows
+ * that target instead of the console's binding, so what the console reports is what actually ran.
+ * Every other result keeps the run's own snapshot.
+ */
+export function overrideDataSourceExecutionTarget(
+  snapshot: DataSourceExecutionSnapshot | undefined,
+  executionContext?: IExecutionContext,
+): DataSourceExecutionSnapshot | undefined {
+  if (!snapshot || !executionContext?.dataSourceId || executionContext.dataSourceId === snapshot.dataSourceId) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    dataSourceId: executionContext.dataSourceId,
+    dataSourceName: executionContext.dataSourceName ?? snapshot.dataSourceName,
+    databaseName: executionContext.databaseName ?? snapshot.databaseName,
+    schemaName: executionContext.schemaName ?? snapshot.schemaName,
+  };
 }

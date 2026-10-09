@@ -9,6 +9,7 @@ import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContext
 import ai.chat2db.community.domain.api.model.request.sql.DbExecutionDatasourceRequest;
 import ai.chat2db.community.domain.api.model.sql.ExecutionDatasource;
 import ai.chat2db.community.domain.api.model.sql.SimpleSqlStatement;
+import ai.chat2db.community.domain.api.model.sql.StatementExecutionTarget;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.domain.api.service.db.IDbDatabaseService;
 import ai.chat2db.community.domain.api.service.db.IDbExecutionDatasourceService;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -57,6 +59,9 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
     /** Datasources a single resolve may visit. */
     static final int MAX_SCOPES = 12;
 
+    /** Statements a single script may carry and still be routed statement by statement. */
+    static final int MAX_ROUTED_STATEMENTS = 16;
+
     private final IDbSqlService dbSqlService;
     private final IDbConnectionContextService connectionContextService;
     private final IDbDatabaseService dbDatabaseService;
@@ -70,12 +75,54 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
         if (tableNames.isEmpty()) {
             return ExecutionDatasource.none();
         }
-
-        List<SqlCompletionScope> scopes = withBoundScopeFirst(param);
-        if (scopes.isEmpty()) {
+        Target target = locate(param, withBoundScopeFirst(param), tableNames);
+        if (!target.found() || isBoundTarget(param, target)) {
             return ExecutionDatasource.none();
         }
+        return ExecutionDatasource.of(target.dataSourceId, target.dataSourceName, target.databaseName);
+    }
 
+    @Override
+    public List<StatementExecutionTarget> resolveStatementTargets(DbExecutionDatasourceRequest param) {
+        if (param == null || StringUtils.isBlank(param.getSql()) || param.getDataSourceId() == null) {
+            return Collections.emptyList();
+        }
+        List<ParsedQuery> queries = routedQueryStatements(param);
+        if (queries.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<SqlCompletionScope> scopes = withBoundScopeFirst(param);
+        List<StatementExecutionTarget> targets = new ArrayList<>(queries.size());
+        for (ParsedQuery query : queries) {
+            Target target = locate(param, scopes, query.tableNames());
+            boolean relocated = target.found() && !isBoundTarget(param, target);
+            targets.add(StatementExecutionTarget.builder()
+                    .sql(query.statement().getSql())
+                    .originalSql(query.statement().getSql())
+                    .sequence(query.sequence())
+                    .dataSourceId(relocated ? target.dataSourceId : null)
+                    .dataSourceName(relocated ? target.dataSourceName : null)
+                    .databaseName(relocated ? target.databaseName : null)
+                    .schemaName(null)
+                    .relocated(relocated)
+                    .build());
+        }
+        return targets;
+    }
+
+    /**
+     * Looks for the datasource/database pair that holds every referenced table, the console's own
+     * binding first.
+     *
+     * @param param statement being resolved.
+     * @param scopes datasources to look in, the bound one leading.
+     * @param tableNames tables the statement needs, lower-cased.
+     * @return the pair that took the tables, found only when one target holds all of them.
+     */
+    private Target locate(DbExecutionDatasourceRequest param,
+                          List<SqlCompletionScope> scopes,
+                          List<String> tableNames) {
         Target target = new Target();
         int remainingPairs = MAX_SCOPE_DATABASES;
         for (int index = 0; index < scopes.size(); index++) {
@@ -87,11 +134,55 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
             int scopeBudget = Math.max(1, remainingPairs - (scopes.size() - index - 1));
             remainingPairs -= scopeBudget - lookUp(param, scopes.get(index), tableNames, target, scopeBudget);
         }
+        return target;
+    }
 
-        if (!target.found() || isBoundTarget(param, target)) {
-            return ExecutionDatasource.none();
+    /**
+     * The statements of a script a routing may move, when the script is nothing but queries against
+     * unqualified tables.
+     *
+     * @param param script to read.
+     * @return one parsed query per statement, empty when the script must keep the console's binding.
+     */
+    private List<ParsedQuery> routedQueryStatements(DbExecutionDatasourceRequest param) {
+        List<SimpleSqlStatement> statements;
+        try {
+            connectionContextService.bind(bindRequest(param.getDataSourceId(), param.getDatabaseName(),
+                    param.getSchemaName()));
+            // The parser reads the bound context, so an unbound resolve cannot even classify a statement.
+            statements = dbSqlService.parseAndValidTableStatements(param.getSql(), dbType());
+        } catch (Exception e) { // impl-contract: fallback - an unparsable script keeps the console's binding.
+            log.debug("statement routing could not parse the script of console {}", param.getConsoleId(), e);
+            return List.of();
+        } finally {
+            connectionContextService.clear();
         }
-        return ExecutionDatasource.of(target.dataSourceId, target.dataSourceName, target.databaseName);
+        if (statements == null || statements.isEmpty() || statements.size() > MAX_ROUTED_STATEMENTS) {
+            return List.of();
+        }
+
+        List<ParsedQuery> queries = new ArrayList<>(statements.size());
+        for (int index = 0; index < statements.size(); index++) {
+            SimpleSqlStatement statement = statements.get(index);
+            if (statement == null || !SqlTypeEnum.SELECT.name().equalsIgnoreCase(statement.getSqlType())) {
+                // A write must never be moved, and an unclassified statement is not proven to be a query.
+                return List.of();
+            }
+            Set<String> tableNames = new LinkedHashSet<>();
+            for (SimpleSqlStatement.SimpleTable table : Objects.requireNonNullElse(statement.getTables(),
+                    Collections.<SimpleSqlStatement.SimpleTable>emptyList())) {
+                if (table == null || StringUtils.isBlank(table.getTableName())) {
+                    continue;
+                }
+                if (StringUtils.isNotBlank(table.getDatabaseName()) || StringUtils.isNotBlank(table.getSchemaName())) {
+                    // The statement already names the database to read; moving it would not help it.
+                    return List.of();
+                }
+                tableNames.add(table.getTableName().toLowerCase(Locale.ROOT));
+            }
+            queries.add(new ParsedQuery(statement, index + 1, List.copyOf(tableNames)));
+        }
+        return queries;
     }
 
     /**
@@ -359,5 +450,11 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
             this.dataSourceName = dataSourceName;
             this.databaseName = databaseName;
         }
+    }
+
+    /**
+     * One routable statement of a script: its text, its position and the tables it needs, lower-cased.
+     */
+    private record ParsedQuery(SimpleSqlStatement statement, int sequence, List<String> tableNames) {
     }
 }
