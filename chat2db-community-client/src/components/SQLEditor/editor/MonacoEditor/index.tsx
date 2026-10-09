@@ -19,6 +19,7 @@ import {
   getSqlCompletionAcceptKey,
   getSqlCompletionAcceptKeyOptions,
 } from '../../core/sqlCompletionAcceptKey';
+import { getSqlCompletionSuggestOptions } from '../../core/sqlCompletionSuggestOptions';
 import { buildContentDiffHunks, ContentDiffHunk } from './contentDiff';
 import { ContentDiffInlineView, createContentDiffInlineView } from './ContentDiffViewer';
 import {
@@ -236,6 +237,7 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
         fixedOverflowWidgets: false,
       };
 
+      const sqlCompletionSuggestOptions = getSqlCompletionSuggestOptions();
       const sqlCompletionOptions: Pick<
         monaco.editor.IStandaloneEditorConstructionOptions,
         | 'acceptSuggestionOnCommitCharacter'
@@ -249,10 +251,7 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
         ...getSqlCompletionAcceptKeyOptions(globalEditorSettings.completionAcceptKey),
         fixedOverflowWidgets: false,
         wordBasedSuggestions: 'off',
-        suggest: {
-          showWords: false,
-          snippetsPreventQuickSuggestions: false,
-        },
+        suggest: sqlCompletionSuggestOptions,
       };
 
       const mergedOptions = {
@@ -263,8 +262,7 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
         suggest: {
           ...defaultOptions.suggest,
           ...options?.suggest,
-          ...sqlCompletionOptions.suggest,
-          snippetsPreventQuickSuggestions: false,
+          ...sqlCompletionSuggestOptions,
         },
       };
 

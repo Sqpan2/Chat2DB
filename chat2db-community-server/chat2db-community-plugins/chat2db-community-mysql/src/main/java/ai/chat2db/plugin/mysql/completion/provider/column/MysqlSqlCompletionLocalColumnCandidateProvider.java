@@ -28,14 +28,18 @@ final class MysqlSqlCompletionLocalColumnCandidateProvider {
         }
         String prefix = context.prefix();
         List<SqlCompletionCandidate> candidates = scope.columns().stream()
-                .filter(column -> matchesPrefix(column, prefix))
+                .filter(column -> matchesTypedText(column, prefix))
                 .map(column -> candidate(column, scope.table()))
                 .toList();
         return Optional.of(MysqlSqlCompletionCandidateBuildResult.success(candidates));
     }
 
-    private static boolean matchesPrefix(String column, String prefix) {
-        return StringUtils.isBlank(prefix) || StringUtils.startsWithIgnoreCase(column, prefix);
+    /**
+     * A column is offered when its name carries the typed text anywhere, since a column is often
+     * remembered from its middle; the editor still ranks the names that begin with it first.
+     */
+    private static boolean matchesTypedText(String column, String prefix) {
+        return StringUtils.isBlank(prefix) || StringUtils.containsIgnoreCase(column, prefix);
     }
 
     private static SqlCompletionCandidate candidate(String column, String table) {

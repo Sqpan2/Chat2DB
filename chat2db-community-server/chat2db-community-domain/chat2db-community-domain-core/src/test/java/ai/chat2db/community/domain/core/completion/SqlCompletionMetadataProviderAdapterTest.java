@@ -49,7 +49,7 @@ class SqlCompletionMetadataProviderAdapterTest {
     }
 
     @Test
-    void listTablesUsesConverterAndPrefixFilter() {
+    void listTablesMatchesTheTypedTextAnywhereInTheName() {
         FakeMetaData metaData = new FakeMetaData();
         SqlCompletionMetadataProviderAdapter provider = newProvider(metaData);
 
@@ -57,8 +57,11 @@ class SqlCompletionMetadataProviderAdapterTest {
                 SqlCompletionCandidateTypeEnum.TABLE, SqlCompletionMetadataScope.empty(), "ord"));
 
         Assertions.assertEquals(SqlCompletionStatusEnum.SUCCESS.name(), result.getStatus());
-        Assertions.assertEquals(1, result.getCandidates().size());
-        SqlCompletionCandidate candidate = result.getCandidates().get(0);
+        // `access_control_apply_record` carries "ord" inside "record", `orders` begins with it, and
+        // `customers` carries neither.
+        Assertions.assertEquals(List.of("access_control_apply_record", "orders"),
+                result.getCandidates().stream().map(SqlCompletionCandidate::getLabel).toList());
+        SqlCompletionCandidate candidate = result.getCandidates().get(1);
         Assertions.assertEquals("orders", candidate.getLabel());
         Assertions.assertEquals("`orders`", candidate.getInsertText());
         Assertions.assertEquals(SqlCompletionCandidateTypeEnum.TABLE, candidate.getType());

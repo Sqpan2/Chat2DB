@@ -64,7 +64,7 @@ public class SqlCompletionMetadataProviderAdapter implements ISqlCompletionMetad
             case PARAMETER -> listRoutineParameters(request);
             default -> List.of();
         };
-        return SqlCompletionMetadataResponse.of(filterByPrefix(candidates, request.prefix()));
+        return SqlCompletionMetadataResponse.of(filterByTypedText(candidates, request.prefix()));
     }
 
     @Override
@@ -183,14 +183,25 @@ public class SqlCompletionMetadataProviderAdapter implements ISqlCompletionMetad
                 identifierProcessor());
     }
 
-    private List<SqlCompletionCandidate> filterByPrefix(List<SqlCompletionCandidate> candidates, String prefix) {
-        if (StringUtils.isBlank(prefix)) {
+    /**
+     * Narrows the metadata candidates to the names that carry the text being typed.
+     * <p>
+     * The text may sit anywhere in the name, not only at its start: a table or column is often
+     * remembered from its middle, and the editor ranks the names that begin with the text ahead of
+     * the ones that merely contain it.
+     *
+     * @param candidates candidates the metadata read produced.
+     * @param typedText text between the start of the identifier and the cursor.
+     * @return the candidates whose name contains the typed text.
+     */
+    private List<SqlCompletionCandidate> filterByTypedText(List<SqlCompletionCandidate> candidates, String typedText) {
+        if (StringUtils.isBlank(typedText)) {
             return candidates == null ? List.of() : candidates;
         }
-        String normalizedPrefix = prefix.trim();
+        String needle = typedText.trim();
         return candidates == null ? List.of()
                 : candidates.stream()
-                .filter(candidate -> StringUtils.startsWithIgnoreCase(candidate.getLabel(), normalizedPrefix))
+                .filter(candidate -> StringUtils.containsIgnoreCase(candidate.getLabel(), needle))
                 .toList();
     }
 

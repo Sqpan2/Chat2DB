@@ -108,7 +108,9 @@ final class MysqlSqlCompletionColumnCandidateProvider {
         }
         if (relation.hasLocalColumns()) {
             return MysqlSqlCompletionCandidateBuildResult.success(relation.columns().stream()
-                    .filter(column -> StringUtils.startsWithIgnoreCase(column, context.prefix()))
+                    // A column is offered when its name carries the typed text anywhere: the editor
+                    // ranks the names that begin with it first, so nothing is hidden by matching wide.
+                    .filter(column -> StringUtils.containsIgnoreCase(column, context.prefix()))
                     .filter(column -> !MysqlSqlCompletionCompletedIdentifierFilter.repeatsCompletedIdentifier(
                             context, column))
                     .map(column -> localColumn(column, relation.table(), relation.alias()))
