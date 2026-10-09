@@ -28,12 +28,35 @@ assert.equal(
   true,
   'an unset split layout uses the workspace result dock',
 );
-assert.equal(
-  shouldUseWorkspaceResultDock({ workspaceTabSplitLayout: { activePane: 'main' } }),
-  false,
-  'split panes keep the in-column result view',
-);
 assert.equal(shouldUseWorkspaceResultDock(null), true, 'a missing state falls back to the dock');
+assert.equal(
+  shouldUseWorkspaceResultDock({ workspaceTabSplitLayout: { paneTabIds: { main: [1, 2] } } as never }),
+  true,
+  'a stored layout whose single pane holds the tabs still uses the dock',
+);
+assert.equal(
+  shouldUseWorkspaceResultDock({
+    workspaceTabSplitLayout: {
+      paneTabIds: { main: [1, 2], 'terminal-panel:bottom': [] },
+    } as never,
+  }),
+  true,
+  'an empty terminal dock pane does not count as a split',
+);
+assert.equal(
+  shouldUseWorkspaceResultDock({
+    workspaceTabSplitLayout: { paneTabIds: { main: [1], 'terminal-panel:bottom': [9] } } as never,
+  }),
+  false,
+  'a terminal dock pane holding tabs counts as a split',
+);
+assert.equal(
+  shouldUseWorkspaceResultDock({
+    workspaceTabSplitLayout: { paneTabIds: { main: [1, 2], split: [3] } } as never,
+  }),
+  false,
+  'two panes holding tabs keep the in-column result view',
+);
 
 assert.equal(
   isWorkspaceResultDockSlotVisible({ tabId: 7, activeTabId: 7 }),

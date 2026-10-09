@@ -391,7 +391,7 @@ const WorkspaceLeft = memo(() => {
 
   return (
     <>
-      <MainSecondaryPanel tabIndex={-1} id="tree-search-area">
+      <MainSecondaryPanel tabIndex={-1} id="tree-search-area" style={{ height: '100%' }}>
         {showResourceSwitcher && (
           <div className={styles.resourceSwitcher}>
             {showWebResourceHeader ? (

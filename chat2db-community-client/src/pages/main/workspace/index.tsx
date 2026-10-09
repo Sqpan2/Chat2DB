@@ -84,10 +84,8 @@ const workspacePage = memo(() => {
         split="horizontal"
         // The dock paints above the band so its pane unfold handle, which sits
         // above the pane edge, stays clickable while the dock is packed.
-        className={cx({
-          ResizerSizeIsZeroTop: dockCollapsed,
-          ResizerHidden: !resultDockEnabled || dockCollapsed,
-        })}
+        // The resizer is styled inline on purpose: the global resizer classes
+        // are descendant selectors and would hide the resizers inside the band.
         pane1Style={{ zIndex: 1 }}
         pane2Style={{ zIndex: 2 }}
         size={dockSize}
@@ -95,6 +93,7 @@ const workspacePage = memo(() => {
         {...(resultDockMaxSize === undefined ? {} : { maxSize: resultDockMaxSize })}
         primary="second"
         allowResize={resultDockEnabled && !dockCollapsed}
+        resizerStyle={dockCollapsed ? { display: 'none' } : undefined}
         onChange={handleResultDockChange}
         onDragFinished={handleResultDockDragFinished}
       >

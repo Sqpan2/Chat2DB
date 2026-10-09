@@ -17,13 +17,22 @@ export function getWorkspaceResultDockSlotId(tabId: string | number) {
 
 /**
  * The dock lifts the result area out of the console column, which only matches
- * the workspace while it shows a single tab pane: a split pane keeps its own
- * in-column result view.
+ * the workspace while it shows a single tab pane.
+ *
+ * The stored layout is not a reliable signal on its own: the terminal dock pane
+ * exists in the layout even when the terminal is closed, and the renderer hides
+ * it in that state. Count the panes that actually hold tabs, exactly like the
+ * renderer does.
  */
 export function shouldUseWorkspaceResultDock(
-  state: { workspaceTabSplitLayout?: unknown } | null | undefined,
+  state: { workspaceTabSplitLayout?: { paneTabIds?: Record<string, unknown[]> } | null } | null | undefined,
 ): boolean {
-  return !state?.workspaceTabSplitLayout;
+  const paneTabIds = state?.workspaceTabSplitLayout?.paneTabIds;
+  if (!paneTabIds) {
+    return true;
+  }
+  const occupiedPaneCount = Object.values(paneTabIds).filter((tabIds) => (tabIds || []).length > 0).length;
+  return occupiedPaneCount <= 1;
 }
 
 /**
