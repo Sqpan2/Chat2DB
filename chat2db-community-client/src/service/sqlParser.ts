@@ -99,16 +99,16 @@ const queryTips = createRequest<
 });
 
 /**
- * Complete SQL in an editor that has no datasource (or no database) selected.
- * Every scope listed is read with its own connection and the candidates are
- * merged server-side, so the order of `scopes` decides which datasource wins a
- * duplicated table or column name.
+ * Complete SQL against every datasource the editor may name a table from, whether
+ * or not it is bound to one. Every scope listed is read with its own connection and
+ * the candidates are merged server-side, so the order of `scopes` decides which
+ * datasource wins a duplicated table or column name.
  */
 const queryUnboundTips = createRequest<
   {
     consoleId: number;
     /** Datasources to collect candidates from, most relevant first. */
-    scopes: Array<{ dataSourceId: number }>;
+    scopes: Array<{ dataSourceId: number; databaseName?: string; schemaName?: string }>;
 
     /** Whether a fully qualified name is required */
     needFullName?: boolean;

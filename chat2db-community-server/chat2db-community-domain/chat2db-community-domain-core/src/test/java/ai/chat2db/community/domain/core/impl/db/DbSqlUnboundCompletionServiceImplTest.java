@@ -3,8 +3,10 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.enums.completion.SqlCompletionCandidateTypeEnum;
+import ai.chat2db.community.domain.api.enums.completion.SqlCompletionEditorHintTypeEnum;
 import ai.chat2db.community.domain.api.enums.completion.SqlCompletionStatusEnum;
 import ai.chat2db.community.domain.api.model.completion.SqlCompletionCandidate;
+import ai.chat2db.community.domain.api.model.completion.SqlCompletionEditorHint;
 import ai.chat2db.community.domain.api.model.completion.SqlCompletionScope;
 import ai.chat2db.community.domain.api.model.completion.result.SqlCompletionResponse;
 import ai.chat2db.community.domain.api.model.metadata.Database;
@@ -177,6 +179,30 @@ class DbSqlUnboundCompletionServiceImplTest {
     }
 
     @Test
+    void holdsABudgetShareBackForEveryScopeSoTheTrailingDatasourcesAreStillRead() {
+        List<Database> manyDatabases = new ArrayList<>();
+        for (int index = 1; index <= 30; index++) {
+            manyDatabases.add(database("db_" + index));
+        }
+        registerPlugin(true, manyDatabases);
+        StubCompletionService completionService = new StubCompletionService();
+        List<SqlCompletionScope> scopes = new ArrayList<>();
+        for (int index = 1; index <= 12; index++) {
+            scopes.add(SqlCompletionScope.of((long) index, null, null));
+        }
+
+        newService(completionService).complete(request(scopes));
+
+        assertEquals(DbSqlUnboundCompletionServiceImpl.MAX_SCOPE_DATABASES, completionService.calls.size(),
+                "the fan-out still reads no more pairs than its budget");
+        assertEquals(12, completionService.calls.stream()
+                        .map(call -> call.substring(0, call.indexOf('/')))
+                        .distinct()
+                        .count(),
+                "one datasource reading many databases must not starve the ones behind it");
+    }
+
+    @Test
     void keepsTheReplaceOffsetsOfTheFirstScope() {
         StubCompletionService completionService = new StubCompletionService();
         completionService.respond("1/db_a", success(3, 7, candidate(SqlCompletionCandidateTypeEnum.TABLE, "alpha")));
@@ -218,6 +244,46 @@ class DbSqlUnboundCompletionServiceImplTest {
         merge.add(SqlCompletionResponse.rejected("boom"), "primary");
 
         assertEquals(SqlCompletionStatusEnum.EMPTY.name(), merge.toResponse().getStatus());
+    }
+
+    @Test
+    void keepsTheEditorHintsOfTheMostRelevantScopeThatHasThem() {
+        SqlCompletionResponse hintless = success(candidate(SqlCompletionCandidateTypeEnum.TABLE, "alpha"));
+        SqlCompletionEditorHint hint = new SqlCompletionEditorHint();
+        hint.setType(SqlCompletionEditorHintTypeEnum.INSERT_VALUE);
+        SqlCompletionResponse hinted = success(candidate(SqlCompletionCandidateTypeEnum.TABLE, "beta"));
+        hinted.setEditorHints(new ArrayList<>(List.of(hint)));
+        SqlCompletionResponse alsoHinted = success(candidate(SqlCompletionCandidateTypeEnum.TABLE, "gamma"));
+        SqlCompletionEditorHint laterHint = new SqlCompletionEditorHint();
+        laterHint.setType(SqlCompletionEditorHintTypeEnum.ROUTINE_PARAMETER);
+        alsoHinted.setEditorHints(new ArrayList<>(List.of(laterHint)));
+
+        DbSqlUnboundCompletionServiceImpl.Merge merge = new DbSqlUnboundCompletionServiceImpl.Merge();
+        merge.add(hintless, "primary");
+        merge.add(hinted, "secondary");
+        merge.add(alsoHinted, "tertiary");
+
+        SqlCompletionResponse response = merge.toResponse();
+
+        assertEquals(List.of("alpha", "beta", "gamma"), labels(response));
+        assertEquals(List.of(hint), response.getEditorHints(),
+                "a console bound to a datasource keeps the hints that datasource produces");
+    }
+
+    @Test
+    void mergeReportsEditorHintsEvenWhenNoScopeProducedCandidates() {
+        SqlCompletionEditorHint hint = new SqlCompletionEditorHint();
+        hint.setType(SqlCompletionEditorHintTypeEnum.INSERT_VALUE);
+        SqlCompletionResponse hinted = SqlCompletionResponse.empty();
+        hinted.setEditorHints(new ArrayList<>(List.of(hint)));
+
+        DbSqlUnboundCompletionServiceImpl.Merge merge = new DbSqlUnboundCompletionServiceImpl.Merge();
+        merge.add(hinted, "primary");
+
+        SqlCompletionResponse response = merge.toResponse();
+
+        assertEquals(List.of(hint), response.getEditorHints(),
+                "the value picker of an insert statement must survive an empty candidate list");
     }
 
     private static DbSqlUnboundCompletionServiceImpl newService(StubCompletionService completionService) {

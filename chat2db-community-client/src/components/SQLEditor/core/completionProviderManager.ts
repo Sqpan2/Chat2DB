@@ -213,8 +213,8 @@ class CompletionProviderManager {
 
     if (completionContextId === undefined) return;
 
-    // Nothing to complete against, or a datasource without a database chosen:
-    // the tips provider fans out over several datasources instead.
+    // A console reads the tables of every datasource the tree offers, its own binding
+    // first, so it registers the tips provider whatever it is bound to.
     if (shouldFanOutSqlCompletion(dbInfo)) {
       this.registerTipsProvider();
       return;
@@ -651,6 +651,7 @@ class CompletionProviderManager {
           consoleId: completionContextId,
           ...this.getTipsQuerySqlPayload(params),
           scopes,
+          needFullName: useGlobalStore.getState().editorSettings?.completion?.includes(databaseType || ''),
           ...(keywordCase ? { keywordCase } : {}),
           activeSnippetSlot,
         });

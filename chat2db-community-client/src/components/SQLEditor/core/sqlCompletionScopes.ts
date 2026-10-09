@@ -1,7 +1,11 @@
 import { DatabaseCapability } from '@/constants/databaseCapabilities';
 import type { IBoundInfo, TreeNodeData } from '@/typings';
-import { getDatabaseSupport, isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
-import { buildUnboundCompletionScopes, type UnboundCompletionScope } from '@/store/workspace/utils/unboundCompletion';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
+import {
+  UNBOUND_COMPLETION_MAX_SCOPES,
+  buildUnboundCompletionScopes,
+  type UnboundCompletionScope,
+} from '@/store/workspace/utils/unboundCompletion';
 
 /**
  * Datasources a completion request may be fanned out to, plus the recency list
@@ -16,29 +20,27 @@ export interface SqlCompletionScopeSources {
 
 /**
  * Whether completion has to be fanned out over several datasources, because the
- * editor's own binding cannot produce candidates on its own.
+ * editor's own binding cannot reach every table the user may want to name.
  *
- * Two cases qualify, both inside a console tab (a local `.sql` file or a terminal
- * keeps its current behaviour, since it has no console to bind):
+ * A console always fans out once it is bound to a datasource of a dialect that has
+ * backend completion: its own request only ever reads the datasource it is bound to,
+ * and the user expects to complete the tables of the other datasources too.
  *
- * - nothing is bound at all, so every datasource is a candidate;
- * - a datasource is bound but no database is chosen, and the datasource owns
- *   databases - the bound request would read the metadata of no database and
- *   silently return nothing.
+ * A console with nothing bound fans out whatever its dialect, since it has no
+ * metadata of its own to read and previously offered no completion at all.
+ *
+ * A local `.sql` file or a terminal keeps its current behaviour: it has no console to
+ * bind, and its dialect may not have backend completion to fan out with.
  */
 export function shouldFanOutSqlCompletion(dbInfo: IBoundInfo | null | undefined): boolean {
   if (!isConsoleContext(dbInfo)) {
     return false;
   }
-  const { dataSourceId, databaseName, databaseType } = dbInfo || {};
+  const { dataSourceId, databaseType } = dbInfo || {};
   if (!dataSourceId) {
     return true;
   }
-  return (
-    isDatabaseCapabilitySupported(databaseType, DatabaseCapability.BACKEND_COMPLETION) &&
-    getDatabaseSupport(databaseType).supportDatabase &&
-    !databaseName
-  );
+  return isDatabaseCapabilitySupported(databaseType, DatabaseCapability.BACKEND_COMPLETION);
 }
 
 /**
@@ -51,11 +53,10 @@ function isConsoleContext(dbInfo: IBoundInfo | null | undefined): boolean {
 }
 
 /**
- * The datasources to complete against, in priority order.
- *
- * With nothing bound the recently executed datasources lead and every other
- * datasource of the tree follows. With a datasource bound but no database, only
- * that datasource is used - the server expands it to all of its databases.
+ * The datasources to complete against, in priority order: the datasource the editor
+ * is bound to leads - narrowed to its chosen database when it has one, so the tables
+ * the user is working with still rank first - and every other datasource of the tree
+ * follows, most recently executed first.
  *
  * @returns the scopes to send, or an empty array when the editor must keep using
  * the bound completion request.
@@ -67,11 +68,34 @@ export function resolveSqlCompletionScopes(
   if (!shouldFanOutSqlCompletion(dbInfo)) {
     return [];
   }
-  const { dataSourceId } = dbInfo || {};
-  if (dataSourceId) {
-    return [{ dataSourceId }];
+  const { dataSourceId, databaseName, schemaName } = dbInfo || {};
+  if (!dataSourceId) {
+    return buildUnboundCompletionScopes(sources.executedDataSourceIds, availableDataSourceIds(sources));
   }
-  return buildUnboundCompletionScopes(sources.executedDataSourceIds, availableDataSourceIds(sources));
+  const boundScope = boundScopeOf(dataSourceId, databaseName, schemaName);
+  const others = buildUnboundCompletionScopes(
+    sources.executedDataSourceIds,
+    availableDataSourceIds(sources),
+    dataSourceId,
+  );
+  return [boundScope, ...others].slice(0, UNBOUND_COMPLETION_MAX_SCOPES);
+}
+
+/**
+ * The leading scope: the datasource the console is bound to, narrowed to the database
+ * and schema the user picked when they picked one. Without a database the backend
+ * covers every database of the datasource.
+ */
+function boundScopeOf(
+  dataSourceId: number,
+  databaseName?: string,
+  schemaName?: string,
+): UnboundCompletionScope {
+  return {
+    dataSourceId,
+    ...(databaseName ? { databaseName } : {}),
+    ...(schemaName ? { schemaName } : {}),
+  };
 }
 
 /**

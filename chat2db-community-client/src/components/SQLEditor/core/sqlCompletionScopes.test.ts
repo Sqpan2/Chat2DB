@@ -20,13 +20,13 @@ const consoleTab: IBoundInfo = { consoleId: 42 };
 
 assert.equal(
   shouldFanOutSqlCompletion({ ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.MYSQL, databaseName: 'app' }),
-  false,
-  'a console bound to a database keeps using its own request',
+  true,
+  'a bound MySQL console reaches the other datasources as well',
 );
 assert.equal(
   shouldFanOutSqlCompletion({ ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.MYSQL }),
   true,
-  'a MySQL console without a database cannot complete against its own binding',
+  'a MySQL console without a database reaches the other datasources as well',
 );
 assert.equal(
   shouldFanOutSqlCompletion({ ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.POSTGRESQL }),
@@ -52,17 +52,40 @@ assert.deepEqual(
   'an unbound console completes against the recently executed datasource first and skips unreadable ones',
 );
 assert.deepEqual(
+  resolveSqlCompletionScopes(
+    { ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.MYSQL, databaseName: 'app', schemaName: 's1' },
+    sources,
+  ),
+  [{ dataSourceId: 5, databaseName: 'app', schemaName: 's1' }, { dataSourceId: 7 }, { dataSourceId: 1 }],
+  'the bound datasource leads, narrowed to the chosen database, and the rest of the tree follows',
+);
+assert.deepEqual(
   resolveSqlCompletionScopes({ ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.MYSQL }, sources),
-  [{ dataSourceId: 5 }],
-  'a bound datasource without a database is the only scope: the server expands it to its databases',
+  [{ dataSourceId: 5 }, { dataSourceId: 7 }, { dataSourceId: 1 }],
+  'without a chosen database the bound datasource leads with every database of its own',
+);
+assert.deepEqual(
+  resolveSqlCompletionScopes({ ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.POSTGRESQL }, sources),
+  [],
+  'a console whose dialect cannot fan out keeps the bound request',
 );
 assert.deepEqual(
   resolveSqlCompletionScopes(
-    { ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.MYSQL, databaseName: 'app' },
+    { ...consoleTab, dataSourceId: 7, databaseType: DatabaseTypeCode.MYSQL },
     sources,
   ),
-  [],
-  'a console that can answer the request itself gets no scope',
+  [{ dataSourceId: 7 }, { dataSourceId: 1 }],
+  'the bound datasource is not listed a second time when it is also the most recently executed one',
+);
+
+const crowded = Array.from({ length: 15 }, (_, index) => dataSourceNode(index + 1));
+assert.deepEqual(
+  resolveSqlCompletionScopes(
+    { ...consoleTab, dataSourceId: 99, databaseType: DatabaseTypeCode.MYSQL },
+    { executedDataSourceIds: [], dataSourceNodes: crowded },
+  ).slice(-1),
+  [{ dataSourceId: 11 }],
+  'the leading bound scope does not push the fan-out past its bound',
 );
 
 console.log('SQL completion scope tests passed');

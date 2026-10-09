@@ -50,4 +50,20 @@ assert.deepEqual(
   'the recently executed datasource is kept and the tree order fills the budget',
 );
 
+assert.deepEqual(
+  buildUnboundCompletionScopes([5, 3], [1, 5, 3], 5),
+  [{ dataSourceId: 3 }, { dataSourceId: 1 }],
+  'the datasource the editor is bound to is supplied as its own scope and never listed twice',
+);
+assert.deepEqual(
+  buildUnboundCompletionScopes([1, 2], [1, 2], undefined),
+  [{ dataSourceId: 1 }, { dataSourceId: 2 }],
+  'without a bound datasource nothing is excluded',
+);
+assert.deepEqual(
+  buildUnboundCompletionScopes([], [1, 2], 0),
+  [{ dataSourceId: 1 }, { dataSourceId: 2 }],
+  'an unusable bound datasource excludes nothing',
+);
+
 console.log('Unbound completion tests passed');
