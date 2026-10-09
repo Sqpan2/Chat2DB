@@ -33,6 +33,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import static ai.chat2db.community.domain.core.cache.CacheKey.getColumnKey;
 import static ai.chat2db.community.domain.core.cache.CacheKey.getTableKey;
+import static ai.chat2db.community.domain.core.cache.CacheKey.getViewKey;
 
 
 @RequiredArgsConstructor
@@ -102,7 +103,11 @@ public class SqlCompletionMetadataProviderAdapter implements ISqlCompletionMetad
     }
 
     private List<SqlCompletionCandidate> listViews(String databaseName, String schemaName) {
-        List<Table> views = metaData().views(connection(), databaseName, schemaName);
+        String viewKey = getViewKey(context.getDataSourceId(), databaseName, schemaName);
+        List<Table> views = MemoryCacheManage.computeIfAbsent(viewKey, () -> {
+            List<Table> read = metaData().views(connection(), databaseName, schemaName);
+            return read == null ? new ArrayList<Table>() : new ArrayList<>(read);
+        });
         return converter.views2candidates(views, databaseName, schemaName, context.getDatasourceName(),
                 identifierProcessor());
     }

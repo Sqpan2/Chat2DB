@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseTypeCode } from '@/constants/common';
 import { TreeNodeType } from '@/constants/tree';
 import type { IBoundInfo, TreeNodeData } from '@/typings';
-import { resolveSqlCompletionScopes, shouldFanOutSqlCompletion } from './sqlCompletionScopes';
+import { resolveExecutionDatasourceScopes, resolveSqlCompletionScopes, shouldFanOutSqlCompletion } from './sqlCompletionScopes';
 
 const dataSourceNode = (dataSourceId: number, hasPermission = true): TreeNodeData => ({
   key: `dataSource_${dataSourceId}`,
@@ -86,6 +86,28 @@ assert.deepEqual(
   ).slice(-1),
   [{ dataSourceId: 11 }],
   'the leading bound scope does not push the fan-out past its bound',
+);
+
+assert.deepEqual(
+  resolveExecutionDatasourceScopes(
+    { ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.MYSQL, databaseName: 'app' },
+    sources,
+  ),
+  [{ dataSourceId: 7 }, { dataSourceId: 1 }],
+  'an execution lists the other datasources only: the backend supplies the bound one itself',
+);
+assert.deepEqual(
+  resolveExecutionDatasourceScopes({ ...consoleTab, databaseType: DatabaseTypeCode.MYSQL }, sources),
+  [],
+  'a console with no datasource has nothing to move a statement to',
+);
+assert.deepEqual(
+  resolveExecutionDatasourceScopes(
+    { ...consoleTab, dataSourceId: 5, databaseType: DatabaseTypeCode.POSTGRESQL },
+    sources,
+  ),
+  [],
+  'a dialect that cannot fan out cannot move a statement either',
 );
 
 console.log('SQL completion scope tests passed');

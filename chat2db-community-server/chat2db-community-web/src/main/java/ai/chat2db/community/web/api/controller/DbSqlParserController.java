@@ -3,10 +3,12 @@ package ai.chat2db.community.web.api.controller;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlContextParserRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlHoverRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlKeywordRequest;
+import ai.chat2db.community.domain.api.model.sql.ExecutionDatasource;
 import ai.chat2db.community.domain.api.model.sql.SqlContextParser;
 import ai.chat2db.community.domain.api.model.sql.SqlHover;
 import ai.chat2db.community.domain.api.model.sql.SqlKeyword;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlCompletionGetRequest;
+import ai.chat2db.community.domain.api.service.db.IDbExecutionDatasourceService;
 import ai.chat2db.community.domain.api.service.db.IDbSqlCompletionService;
 import ai.chat2db.community.domain.api.service.db.IDbSqlParserService;
 import ai.chat2db.community.domain.api.service.db.IDbSqlUnboundCompletionService;
@@ -14,6 +16,7 @@ import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.tools.wrapper.result.ListResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
 import ai.chat2db.community.web.api.converter.db.DbWebConverter;
+import ai.chat2db.community.web.api.model.request.db.ExecutionDatasourceRequest;
 import ai.chat2db.community.web.api.model.request.db.SqlCompletionRequest;
 import ai.chat2db.community.web.api.model.request.db.SqlContextParserRequest;
 import ai.chat2db.community.web.api.model.request.db.SqlHoverRequest;
@@ -38,15 +41,18 @@ public class DbSqlParserController {
     private final IDbSqlParserService sqlParserService;
     private final IDbSqlCompletionService sqlCompletionService;
     private final IDbSqlUnboundCompletionService sqlUnboundCompletionService;
+    private final IDbExecutionDatasourceService executionDatasourceService;
 
     public DbSqlParserController(DbWebConverter dbWebConverter,
             IDbSqlParserService sqlParserService,
             IDbSqlCompletionService sqlCompletionService,
-            IDbSqlUnboundCompletionService sqlUnboundCompletionService) {
+            IDbSqlUnboundCompletionService sqlUnboundCompletionService,
+            IDbExecutionDatasourceService executionDatasourceService) {
         this.dbWebConverter = dbWebConverter;
         this.sqlParserService = sqlParserService;
         this.sqlCompletionService = sqlCompletionService;
         this.sqlUnboundCompletionService = sqlUnboundCompletionService;
+        this.executionDatasourceService = executionDatasourceService;
     }
 
     /**
@@ -125,6 +131,24 @@ public class DbSqlParserController {
         var param = dbWebConverter.request2UnboundCompletionParam(request);
         var result = sqlUnboundCompletionService.complete(param);
         return DataResult.of(SqlCompletionResponse.from(result));
+    }
+
+    /**
+     * Resolves the datasource a read-only statement has to be executed against.
+     * <p>
+     * Endpoint: {@code POST /api/sql_parser/context/execution_datasource}. The console's own binding is
+     * tried first and the requested scopes after it, so a statement naming tables of another datasource
+     * can be moved to the one that holds them. A result without a datasource means the console keeps
+     * the statement.
+     *
+     * @param request request payload with the statement and the scopes to look in.
+     * @return data result containing the datasource to execute against.
+     */
+    @PostMapping("/context/execution_datasource")
+    public DataResult<ExecutionDatasource> sqlExecutionDatasource(
+            @Valid @RequestBody ExecutionDatasourceRequest request) {
+        var param = dbWebConverter.request2ExecutionDatasourceParam(request);
+        return DataResult.of(executionDatasourceService.resolve(param));
     }
 
     /**

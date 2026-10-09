@@ -136,6 +136,31 @@ class SqlCompletionMetadataProviderAdapterTest {
     }
 
     @Test
+    void listTableViewsReadsTheViewsOnceAndServesTheNextCallFromTheCache() {
+        // A datasource of its own, because the cache is shared by every adapter of the process.
+        FakeMetaData metaData = new FakeMetaData();
+        SqlCompletionMetadataProviderAdapter provider = new SqlCompletionMetadataProviderAdapter(
+                SqlCompletionMetadataContext.builder()
+                        .dataSourceId(4242L)
+                        .databaseName("main")
+                        .schemaName("public")
+                        .datasourceName("local")
+                        .metaData(metaData)
+                        .identifierProcessor(new BacktickIdentifierProcessor())
+                        .build(),
+                converter);
+        DbSqlCompletionMetadataRequest request = DbSqlCompletionMetadataRequest.of(
+                SqlCompletionCandidateTypeEnum.TABLE_VIEW, SqlCompletionMetadataScope.empty(), "ord");
+
+        SqlCompletionMetadataResponse first = provider.list(request);
+        SqlCompletionMetadataResponse second = provider.list(request);
+
+        Assertions.assertEquals(1, metaData.viewReads, "the view list is cached like the table list");
+        Assertions.assertEquals(first.getCandidates().stream().map(SqlCompletionCandidate::getLabel).toList(),
+                second.getCandidates().stream().map(SqlCompletionCandidate::getLabel).toList());
+    }
+
+    @Test
     void listTriggersUsesConverterAndPrefixFilter() {
         SqlCompletionMetadataProviderAdapter provider = newProvider(new FakeMetaData());
 
@@ -293,6 +318,7 @@ class SqlCompletionMetadataProviderAdapterTest {
         private String lastDatabaseName;
         private String lastSchemaName;
         private String lastTableName;
+        private int viewReads;
 
         @Override
         public List<Database> databases(Connection connection) {
@@ -324,6 +350,7 @@ class SqlCompletionMetadataProviderAdapterTest {
         public List<Table> views(Connection connection, String databaseName, String schemaName) {
             lastDatabaseName = databaseName;
             lastSchemaName = schemaName;
+            viewReads++;
             return List.of(Table.builder().databaseName(databaseName).schemaName(schemaName).name("order_view").build());
         }
 

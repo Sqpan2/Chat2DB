@@ -9,6 +9,11 @@ export interface SqlExecutionLogContext {
   databaseType?: string;
   databaseName?: string;
   schemaName?: string;
+  /**
+   * The statement was moved to a datasource other than the console's own binding, because the tables it
+   * names live there.
+   */
+  autoLocated?: boolean;
 }
 
 export interface SqlExecutionLogMessageOutput {

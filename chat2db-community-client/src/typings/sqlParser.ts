@@ -268,6 +268,16 @@ export interface ISqlCompletionResult {
   reasonCode?: string;
 }
 
+/**
+ * The datasource a statement has to be executed against. Every field is absent when the console's own
+ * binding keeps the statement.
+ */
+export interface IExecutionDatasource {
+  dataSourceId?: number | null;
+  dataSourceName?: string | null;
+  databaseName?: string | null;
+}
+
 export enum StatementValidTypeEnum {
   VALID = 'VALID',
   INVALID = 'INVALID',

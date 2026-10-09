@@ -33,6 +33,11 @@ import {
 } from './executionConsolePreferences';
 import { useStyles } from './style';
 
+import {
+  executionContextKey,
+  formatExecutionContext,
+} from './executionConsoleContext';
+
 const ORDER_STORAGE_KEY = createExecutionConsoleOrderStorageKey('community', __RUNTIME_ENV__);
 
 interface IProps {
@@ -332,18 +337,11 @@ function formatMilliseconds(value?: number) {
 }
 
 function formatContext(context: SqlExecutionLogContext) {
-  const source = context.dataSourceName || (context.dataSourceId ? `#${context.dataSourceId}` : 'SQL');
-  return [source, context.databaseName, context.schemaName].filter(Boolean).join(' / ');
+  return formatExecutionContext(context, i18n('workspace.text.executionAutoLocated'));
 }
 
 function contextKey(context: SqlExecutionLogContext) {
-  return [
-    context.dataSourceId,
-    context.dataSourceName,
-    context.databaseType,
-    context.databaseName,
-    context.schemaName,
-  ].join('|');
+  return executionContextKey(context);
 }
 
 function buildPlainText(records: SqlExecutionLogRecord[]) {

@@ -58,6 +58,14 @@ import {
   type SQLExecutionInvocation,
 } from '@/components/SQLEditor/editor/SQLEditorWithOperation';
 import { createLiveSqlEditorHandle } from './liveEditorHandle';
+import {
+  findDataSourceNode,
+  relocateBoundInfo,
+  shouldResolveExecutionDatasource,
+} from './executionRelocation';
+import { resolveExecutionDatasourceScopes } from '@/components/SQLEditor/core/sqlCompletionScopes';
+import SQLParserService from '@/service/sqlParser';
+import type { IExecutionDatasource } from '@/typings/sqlParser';
 import { mergeLatestLocalFileBoundInfo } from './liveEditorBoundInfo';
 import SplitPaneUnpack from '@/components/SplitPaneUnpack';
 import useSqlExecutor from '@/hooks/useSqlExecutor';
@@ -198,18 +206,78 @@ function getEventResultSequence(event: SqlExecutionEvent, result?: IManageResult
   return fallback;
 }
 
-function getExecutionLogContext(boundInfo: IBoundInfo | DataSourceExecutionSnapshot): SqlExecutionLogContext {
+function getExecutionLogContext(
+  boundInfo: IBoundInfo | DataSourceExecutionSnapshot,
+  options?: { autoLocated?: boolean },
+): SqlExecutionLogContext {
   return {
     dataSourceId: boundInfo.dataSourceId,
     dataSourceName: boundInfo.dataSourceName,
     databaseType: boundInfo.databaseType,
     databaseName: boundInfo.databaseName,
     schemaName: boundInfo.schemaName,
+    ...(options?.autoLocated ? { autoLocated: true } : {}),
   };
 }
 
-const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) => {
-  const {
+/** How long looking the statement's datasource up may take before the console's own binding is used. */
+const EXECUTION_DATASOURCE_RESOLVE_TIMEOUT_MS = 2000;
+
+/**
+ * The console's binding moved to the datasource holding the statement's tables, when the statement is a
+ * query whose tables the current binding does not serve.
+ *
+ * Every failure - a timeout, an unreachable datasource, a statement the backend cannot classify - leaves
+ * the console's own binding in place: looking a datasource up must never keep a statement from running.
+ */
+async function resolveRelocatedExecutionTarget(
+  boundInfo: IBoundInfo,
+  sql: string | undefined,
+): Promise<{ boundInfo: IBoundInfo } | null> {
+  if (!sql || !shouldResolveExecutionDatasource(boundInfo, sql)) {
+    return null;
+  }
+  const scopes = resolveExecutionDatasourceScopes(boundInfo, {
+    executedDataSourceIds: useWorkspaceStore.getState().recentExecutedDataSourceIds,
+    dataSourceNodes: useTreeStore.getState().dataSourceList || [],
+  });
+  const target = await requestExecutionDatasource(boundInfo, sql, scopes);
+  if (!target) {
+    return null;
+  }
+  const dataSourceNode = findDataSourceNode(useTreeStore.getState().dataSourceList, target.dataSourceId);
+  return { boundInfo: relocateBoundInfo(boundInfo, target, dataSourceNode) };
+}
+
+async function requestExecutionDatasource(
+  boundInfo: IBoundInfo,
+  sql: string,
+  scopes: Array<{ dataSourceId: number }>,
+): Promise<IExecutionDatasource | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EXECUTION_DATASOURCE_RESOLVE_TIMEOUT_MS);
+  try {
+    const resolved = await SQLParserService.queryExecutionDatasource(
+      {
+        consoleId: boundInfo.consoleId,
+        sql,
+        dataSourceId: boundInfo.dataSourceId,
+        databaseName: boundInfo.databaseName,
+        schemaName: boundInfo.schemaName,
+        scopes,
+      },
+      { signal: controller.signal },
+    );
+    return resolved?.dataSourceId ? resolved : null;
+  } catch (error) {
+    console.error('Error resolving the datasource of the statement:', error);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) => {  const {
     boundInfo: _boundInfo,
     initDDL,
     type,
@@ -867,13 +935,13 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     });
   };
 
-  const handleExecuteSQL = (params: IConsoleReturnExecuteSql | SQLExecutionInvocation): Promise<any> => {
+  const handleExecuteSQL = async (params: IConsoleReturnExecuteSql | SQLExecutionInvocation): Promise<any> => {
     const {
       executionTarget: invocationTarget,
       dataSourceState: invocationDataSourceState,
       ...requestParams
     } = params as SQLExecutionInvocation;
-    const executionTarget = invocationTarget || createDataSourceExecutionSnapshot(boundInfo);
+    let executionTarget = invocationTarget || createDataSourceExecutionSnapshot(boundInfo);
     const executionBlockReason = getSqlExecutionBlockReason(
       executionTarget.dataSourceId,
       invocationDataSourceState || dataSourceState,
@@ -889,6 +957,21 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     if (!canExecuteSQL()) {
       staticMessage.warning(i18n('common.text.currentExecution'));
       return Promise.resolve();
+    }
+
+    // A query naming tables the console's own binding cannot serve runs on the datasource that holds
+    // them instead; anything else - a write, an unparsable statement, a failed lookup - runs where the
+    // user pointed the console.
+    let autoLocated = false;
+    const relocated = await resolveRelocatedExecutionTarget(boundInfo, requestParams.sql);
+    if (relocated) {
+      executionTarget = createDataSourceExecutionSnapshot(relocated.boundInfo);
+      autoLocated = true;
+      // Looking the datasource up takes a moment, and a run may have started meanwhile.
+      if (!canExecuteSQL()) {
+        staticMessage.warning(i18n('common.text.currentExecution'));
+        return Promise.resolve();
+      }
     }
 
     if (!boxRightConsoleHeight) {
@@ -929,7 +1012,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     executionParamsBySequenceRef.current[executionSequence] = executeSqlParams;
 
     const webExecutionId = isDesktop ? undefined : uuidv4();
-    const executionLogContext = getExecutionLogContext(executionSnapshot);
+    const executionLogContext = getExecutionLogContext(executionSnapshot, { autoLocated });
     if (isDesktop && onExecuteSQLCallback) {
       desktopExecutionCallbackBySequenceRef.current[executionSequence] = {
         databaseInfo: {

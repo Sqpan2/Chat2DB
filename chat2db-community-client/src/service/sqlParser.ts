@@ -12,6 +12,7 @@ import {
   ISqlCompletionActiveSnippetSlot,
   SqlCompletionKeywordCase,
   ISqlCompletionResult,
+  IExecutionDatasource,
 } from '@/typings/sqlParser';
 import createRequest from './base';
 
@@ -136,6 +137,30 @@ const queryUnboundTips = createRequest<
   errorLevel: false,
 });
 
+/**
+ * Ask which datasource a statement has to be executed against, when the console's own binding is not
+ * the one holding the tables it names. Only read-only statements are ever moved, and a result without
+ * a datasource means the console keeps the statement.
+ */
+const queryExecutionDatasource = createRequest<
+  {
+    consoleId?: number;
+    sql: string;
+    /** Datasource the console is bound to. */
+    dataSourceId?: number;
+    /** Database the console is bound to. */
+    databaseName?: string;
+    /** Schema the console is bound to. */
+    schemaName?: string;
+    /** Datasources to try after the bound one, most relevant first. */
+    scopes: Array<{ dataSourceId: number }>;
+  },
+  IExecutionDatasource
+>(`${prefix}/context/execution_datasource`, {
+  method: 'post',
+  errorLevel: false,
+});
+
 const queryHover = createRequest<
   {
     consoleId: number;
@@ -160,5 +185,6 @@ export default {
   queryDatabaseAndSchema,
   queryTips,
   queryUnboundTips,
+  queryExecutionDatasource,
   queryHover,
 };

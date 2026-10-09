@@ -99,6 +99,28 @@ function boundScopeOf(
 }
 
 /**
+ * The datasources a read-only statement may be executed against, most relevant first.
+ *
+ * The datasource the console is bound to is left out: the backend supplies that one itself and always
+ * reads it before any other, so listing it here would only spend the fan-out budget twice.
+ *
+ * @returns the scopes to send, or an empty array when the console cannot reach another datasource.
+ */
+export function resolveExecutionDatasourceScopes(
+  dbInfo: IBoundInfo | null | undefined,
+  sources: SqlCompletionScopeSources,
+): UnboundCompletionScope[] {
+  if (!shouldFanOutSqlCompletion(dbInfo) || !dbInfo?.dataSourceId) {
+    return [];
+  }
+  return buildUnboundCompletionScopes(
+    sources.executedDataSourceIds,
+    availableDataSourceIds(sources),
+    dbInfo.dataSourceId,
+  );
+}
+
+/**
  * Ids of the datasources the tree may complete against, skipping the ones the
  * user cannot read and the nodes that carry no id.
  */

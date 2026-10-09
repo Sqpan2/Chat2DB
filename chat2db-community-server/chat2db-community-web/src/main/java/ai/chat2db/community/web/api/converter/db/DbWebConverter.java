@@ -16,6 +16,7 @@ import ai.chat2db.community.domain.api.model.request.sql.DbSqlContextParserReque
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlFormatRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlHoverRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlKeywordRequest;
+import ai.chat2db.community.domain.api.model.request.sql.DbExecutionDatasourceRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlUnboundCompletionRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlValidSelectRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbTableQueryRequest;
@@ -358,6 +359,20 @@ public abstract class DbWebConverter {
         param.setNeedFullName(request.getNeedFullName());
         param.setKeywordCase(request.getKeywordCase());
         param.setActiveSnippetSlot(request.getActiveSnippetSlot());
+        param.setScopes(request.getScopes());
+        return param;
+    }
+
+    public DbExecutionDatasourceRequest request2ExecutionDatasourceParam(ExecutionDatasourceRequest request) {
+        if (request == null) {
+            return null;
+        }
+        DbExecutionDatasourceRequest param = new DbExecutionDatasourceRequest();
+        param.setConsoleId(request.getConsoleId());
+        param.setSql(request.getSql());
+        param.setDataSourceId(request.getDataSourceId());
+        param.setDatabaseName(request.getDatabaseName());
+        param.setSchemaName(request.getSchemaName());
         param.setScopes(request.getScopes());
         return param;
     }

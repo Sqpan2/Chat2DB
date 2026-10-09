@@ -1,9 +1,11 @@
 package ai.chat2db.community.web.api.converter.db;
 
 import ai.chat2db.community.domain.api.model.completion.SqlCompletionScope;
+import ai.chat2db.community.domain.api.model.request.sql.DbExecutionDatasourceRequest;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlUnboundCompletionRequest;
 import ai.chat2db.community.domain.api.model.result.ExecuteResponse;
 import ai.chat2db.community.domain.api.model.result.ResultCell;
+import ai.chat2db.community.web.api.model.request.db.ExecutionDatasourceRequest;
 import ai.chat2db.community.web.api.model.request.db.UnboundSqlCompletionRequest;
 import ai.chat2db.community.web.api.model.response.db.ExecuteResultResponse;
 import org.junit.jupiter.api.Test;
@@ -81,5 +83,32 @@ class DbWebConverterTest {
 
         assertEquals("select * from ord", param.getSql());
         assertEquals(request.getBeforeSql().length(), param.getCursor().intValue());
+    }
+
+    @Test
+    void executionDatasourceRequestIsRejectedWhenMissing() {
+        assertNull(converter.request2ExecutionDatasourceParam(null));
+    }
+
+    @Test
+    void executionDatasourceRequestKeepsTheBindingAndTheScopes() {
+        ExecutionDatasourceRequest request = new ExecutionDatasourceRequest();
+        request.setConsoleId(42L);
+        request.setSql("SELECT * FROM verify_task;");
+        request.setDataSourceId(5L);
+        request.setDatabaseName("db58_hbg_audit");
+        request.setSchemaName("s1");
+        request.setScopes(List.of(SqlCompletionScope.of(7L, null, null), SqlCompletionScope.of(1L, "app", null)));
+
+        DbExecutionDatasourceRequest param = converter.request2ExecutionDatasourceParam(request);
+
+        assertEquals(Long.valueOf(42L), param.getConsoleId());
+        assertEquals("SELECT * FROM verify_task;", param.getSql());
+        assertEquals(Long.valueOf(5L), param.getDataSourceId());
+        assertEquals("db58_hbg_audit", param.getDatabaseName());
+        assertEquals("s1", param.getSchemaName());
+        assertEquals(
+                List.of(SqlCompletionScope.of(7L, null, null), SqlCompletionScope.of(1L, "app", null)),
+                param.getScopes());
     }
 }
