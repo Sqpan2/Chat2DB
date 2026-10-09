@@ -6,6 +6,8 @@ import { ShortcutAction } from '@/constants/shortcut';
 import { useCreateRightClickMenu, canBeDoubleClicked } from '../../hooks/useCreateRightClickMenu';
 import { IconfontSvg } from '@chat2db/ui';
 import { useTreeStore } from '@/store/tree';
+import { useWorkspaceStore } from '@/store/workspace';
+import { resolveConsoleDataSourceSwitch } from '@/store/workspace/utils/consoleDataSourceSwitch';
 import ShortcutMenuLabel from '@/components/ShortcutMenuLabel';
 import { loadResourceOperationCapabilities } from '@/client-extension/resourceOperationCapabilities';
 import type { ResourceOperationCapabilities } from '@/client-extension/types';
@@ -24,6 +26,20 @@ export interface TreeDropdownRef {
   // Returns true when this component handles the double-click.
   handleDoubleClick: (node: TreeNodeData) => Promise<boolean>;
   handleShortcut: (node: TreeNodeData, action: ShortcutAction) => Promise<boolean>;
+}
+
+/**
+ * Points the console the user is looking at at the datasource and database of the node they just
+ * opened, so a table found in another datasource can be queried where it lives. The tab the node opens
+ * itself is untouched: only a console tab owns a binding this may re-point.
+ */
+function switchActiveConsoleDataSource(node: TreeNodeData) {
+  const { activeConsoleId, workspaceTabList, updateWorkspaceTabBoundInfo } = useWorkspaceStore.getState();
+  const activeTab = workspaceTabList?.find((tab) => tab.id === activeConsoleId);
+  const binding = resolveConsoleDataSourceSwitch(activeTab, node);
+  if (binding) {
+    updateWorkspaceTabBoundInfo(binding);
+  }
 }
 
 const TreeDropdown = (props: IProps, ref) => {
@@ -83,6 +99,7 @@ const TreeDropdown = (props: IProps, ref) => {
           handled = true;
         }
       });
+      switchActiveConsoleDataSource(node);
       return handled;
     }
     return false;

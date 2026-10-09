@@ -131,3 +131,32 @@ export function mergeLiveDataSourceContext(current: IBoundInfo, live: LiveDataSo
     connectable: live.connectable,
   };
 }
+
+/**
+ * Takes the binding of a datasource the console was pointed at from outside itself - the tree handing
+ * it a table, say.
+ *
+ * The identity of the datasource record is merged as it always is, so a rename or a colour change still
+ * reaches the console. The binding itself is only taken over when it really changed, because another
+ * datasource means another dialect: a console that was re-pointed has to carry the database and the
+ * dialect of the datasource it now reads, while an unrelated write to the store must not drag a console
+ * that already matches it.
+ *
+ * @param current binding the console is holding.
+ * @param live binding the store holds for it.
+ * @returns the binding the console should hold.
+ */
+export function adoptBoundDataSourceContext(current: IBoundInfo, live: IBoundInfo): IBoundInfo {
+  const identity = mergeLiveDataSourceContext(current, live);
+  if (live.dataSourceId === current.dataSourceId && live.databaseName === current.databaseName) {
+    return identity;
+  }
+  return {
+    ...identity,
+    databaseType: live.databaseType ?? identity.databaseType,
+    databaseName: live.databaseName,
+    schemaName: live.schemaName,
+    supportDatabase: live.supportDatabase ?? identity.supportDatabase,
+    supportSchema: live.supportSchema ?? identity.supportSchema,
+  };
+}

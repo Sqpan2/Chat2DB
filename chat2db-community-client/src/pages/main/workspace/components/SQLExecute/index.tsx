@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom';
 import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 import { WorkspaceTabType } from '@/constants/workspace';
 import {
+  adoptBoundDataSourceContext,
   getDataSourceRuntimeAvailabilityGeneration,
   getSqlExecutionBlockReason,
   mergeLiveDataSourceContext,
@@ -834,8 +835,15 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
   }, [boundInfo]);
 
   useUpdateEffect(() => {
-    setBoundInfo((currentBoundInfo) => mergeLiveDataSourceContext(currentBoundInfo, _boundInfo));
+    // A console follows its binding wherever it is written - the toolbar, or the tree handing it a
+    // table of another datasource. Any other editor tab keeps to the identity of its datasource.
+    setBoundInfo((currentBoundInfo) =>
+      type === WorkspaceTabType.CONSOLE
+        ? adoptBoundDataSourceContext(currentBoundInfo, _boundInfo)
+        : mergeLiveDataSourceContext(currentBoundInfo, _boundInfo),
+    );
   }, [
+    type,
     _boundInfo.dataSourceId,
     _boundInfo.dataSourceName,
     _boundInfo.environmentId,
@@ -844,6 +852,9 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     _boundInfo.watermarkEnabled,
     _boundInfo.watermarkContent,
     _boundInfo.connectable,
+    _boundInfo.databaseType,
+    _boundInfo.databaseName,
+    _boundInfo.schemaName,
   ]);
 
   useUpdateEffect(() => {

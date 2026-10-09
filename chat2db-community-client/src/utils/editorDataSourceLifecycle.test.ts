@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { IBoundInfo } from '@/typings';
 import {
+  adoptBoundDataSourceContext,
   getDataSourceRuntimeAvailabilityGeneration,
   getSqlExecutionBlockReason,
   mergeLiveDataSourceContext,
@@ -101,5 +102,30 @@ assert.equal(
   merged,
   'unchanged live context preserves the current object',
 );
+
+
+// A console the tree re-pointed at another datasource takes its dialect and database along.
+const adopted = adoptBoundDataSourceContext(
+  { dataSourceId: 5, dataSourceName: 'test-ajk-user03', databaseType: 'MYSQL' as any, databaseName: 'db58_hbg_audit' },
+  {
+    dataSourceId: 7,
+    dataSourceName: 'test-ajk-user02',
+    databaseType: 'MYSQL' as any,
+    databaseName: 'db58_hbg_ccf',
+    supportDatabase: true,
+  },
+);
+assert.equal(adopted.dataSourceId, 7, 'the console follows the datasource the tree handed it');
+assert.equal(adopted.dataSourceName, 'test-ajk-user02');
+assert.equal(adopted.databaseName, 'db58_hbg_ccf', 'and the database holding the table it was handed');
+assert.equal(adopted.supportDatabase, true, 'the dialect support of the new datasource comes with it');
+
+// A write to the store that does not move the console must not drag its binding along.
+const untouched = adoptBoundDataSourceContext(
+  { dataSourceId: 5, dataSourceName: 'test-ajk-user03', databaseType: 'MYSQL' as any, databaseName: 'db58_hbg_audit' },
+  { dataSourceId: 5, dataSourceName: 'renamed', databaseType: 'MYSQL' as any, databaseName: 'db58_hbg_audit' },
+);
+assert.equal(untouched.dataSourceName, 'renamed', 'the identity of the datasource record still reaches the console');
+assert.equal(untouched.databaseName, 'db58_hbg_audit', 'and the console keeps the database it is holding');
 
 console.log('Editor data source lifecycle tests passed');
