@@ -88,6 +88,8 @@ export type MonacoSQLEditorProps = {
   onCursorChange?: (editor: monaco.editor.IStandaloneCodeEditor) => void;
   /** Mouse click callback. */
   onMouseClick?: (editor: monaco.editor.IStandaloneCodeEditor, e: monaco.editor.IEditorMouseEvent) => void;
+  /** Double-click callback, fired with the editor whose word the user just double-clicked. */
+  onEditorDoubleClick?: (editor: monaco.editor.IStandaloneCodeEditor) => void;
   /** Context menu callback. */
   onContextMenu?: (e: monaco.editor.IEditorMouseEvent) => void;
   /** Mouse hover callback. */
@@ -117,6 +119,7 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
       onContentChange,
       onCursorChange,
       onMouseClick,
+      onEditorDoubleClick,
       onMount,
       onContextMenu,
       onHover,
@@ -306,6 +309,29 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
         contentDiffDecorationCollectionRef.current = null;
       };
     }, [id]);
+
+    // The latest double-click callback, so the DOM listener below never fires a stale one.
+    const onEditorDoubleClickRef = useRef(onEditorDoubleClick);
+    onEditorDoubleClickRef.current = onEditorDoubleClick;
+
+    // Monaco exposes no double-click event; the editor's DOM node still receives the native one.
+    useEffect(() => {
+      if (!isEditorReady) {
+        return;
+      }
+      const editor = editorInstanceRef.current;
+      const domNode = editor?.getDomNode();
+      if (!editor || !domNode) {
+        return;
+      }
+      const handleDoubleClick = () => {
+        onEditorDoubleClickRef.current?.(editor);
+      };
+      domNode.addEventListener('dblclick', handleDoubleClick);
+      return () => {
+        domNode.removeEventListener('dblclick', handleDoubleClick);
+      };
+    }, [isEditorReady]);
 
     // Listen for editor focus changes.
     useEffect(() => {

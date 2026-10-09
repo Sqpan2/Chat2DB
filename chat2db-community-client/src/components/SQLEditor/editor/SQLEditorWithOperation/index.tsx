@@ -84,6 +84,8 @@ interface ISQLEditorWithOperationProps {
 
   onExecuteSQL: (props: SQLExecutionInvocation) => Promise<any>;
   onChange?: (value: string) => void;
+  /** Double-click on a table name in the editor, with the identifier it resolved to. */
+  onTableIdentifierDoubleClick?: (tableIdentifier: EditorTableIdentifier | null) => void;
 }
 
 export interface ISQLEditorWithOperationRef extends SQLEditorRef, EditorCloseGuardRef {
@@ -137,6 +139,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     dataSourceState = 'available',
     reloadSQL,
     onChange,
+    onTableIdentifierDoubleClick,
   } = props;
   const isReadOnly = !!dbInfo.readOnly;
   const isSupportedRoutineEditor =
@@ -1236,6 +1239,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
           onFileEncodingChange={handleFileEncodingChange}
           contextMenuInfo={contextMenuInfo}
           onTableIdentifierContextChange={setContextTableIdentifier}
+          onTableIdentifierDoubleClick={onTableIdentifierDoubleClick}
           onContextMenu={isReadOnly ? undefined : handleContextMenu}
         />
         {!isReadOnly && (

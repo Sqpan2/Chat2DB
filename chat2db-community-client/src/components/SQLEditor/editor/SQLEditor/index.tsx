@@ -89,6 +89,8 @@ export interface SQLEditorProps {
   contextMenuInfo?: IContextMenuInfo;
   enableContentDiffHints?: boolean;
   onTableIdentifierContextChange?: (tableIdentifier: EditorTableIdentifier | null) => void;
+  /** Double-click on a table name in the editor, with the identifier it resolved to. */
+  onTableIdentifierDoubleClick?: (tableIdentifier: EditorTableIdentifier | null) => void;
 }
 
 export interface SQLEditorRef extends MonacoEditorRef {
@@ -147,6 +149,7 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
       onMount,
       onReady,
       onTableIdentifierContextChange,
+      onTableIdentifierDoubleClick,
       ...rest
     },
     ref,
@@ -270,6 +273,10 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
 
     function getTableIdentifierAtPosition(position: monaco.IPosition | null | undefined) {
       return findTableIdentifierAtPosition(position, sqlStatementListRef.current, dbInfo);
+    }
+
+    function handleEditorDoubleClick(editor: monaco.editor.IStandaloneCodeEditor) {
+      onTableIdentifierDoubleClick?.(getTableIdentifierAtPosition(editor.getPosition()));
     }
 
     useEffect(() => {
@@ -1045,6 +1052,7 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
             onContentChange={onContentChange}
             onCursorChange={handleCursorChange}
             onMouseClick={handleMouseClick}
+            onEditorDoubleClick={handleEditorDoubleClick}
             onContextMenu={handleContextMenu}
             onHover={handleHover}
             enableContentDiffHints={enableContentDiffHints}

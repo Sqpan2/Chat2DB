@@ -18,6 +18,7 @@ import ai.chat2db.community.domain.core.cache.CacheKey;
 import ai.chat2db.community.domain.core.cache.MemoryCacheManage;
 import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.spi.IDbMetaData;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.model.request.TablesRequest;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import java.util.ArrayList;
@@ -146,6 +147,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
      */
     private List<ParsedQuery> routedQueryStatements(DbExecutionDatasourceRequest param) {
         List<SimpleSqlStatement> statements;
+        ConnectInfo previous = Chat2DBContext.getConnectInfo();
         try {
             connectionContextService.bind(bindRequest(param.getDataSourceId(), param.getDatabaseName(),
                     param.getSchemaName()));
@@ -155,7 +157,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
             log.debug("statement routing could not parse the script of console {}", param.getConsoleId(), e);
             return List.of();
         } finally {
-            connectionContextService.clear();
+            restoreContext(previous);
         }
         if (statements == null || statements.isEmpty() || statements.size() > MAX_ROUTED_STATEMENTS) {
             return List.of();
@@ -193,6 +195,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
      */
     private List<String> referencedTableNames(DbExecutionDatasourceRequest param) {
         List<SimpleSqlStatement> statements;
+        ConnectInfo previous = Chat2DBContext.getConnectInfo();
         try {
             connectionContextService.bind(bindRequest(param.getDataSourceId(), param.getDatabaseName(),
                     param.getSchemaName()));
@@ -202,7 +205,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
             log.debug("execution target resolve could not parse the statement of console {}", param.getConsoleId(), e);
             return List.of();
         } finally {
-            connectionContextService.clear();
+            restoreContext(previous);
         }
         if (statements == null || statements.isEmpty()) {
             return List.of();
@@ -249,6 +252,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
         Long dataSourceId = scope.dataSourceId();
         List<String> databases;
         String datasourceName;
+        ConnectInfo previous = Chat2DBContext.getConnectInfo();
         try {
             connectionContextService.bind(bindRequest(dataSourceId, scope.databaseName(), scope.schemaName()));
             datasourceName = datasourceName();
@@ -257,7 +261,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
             log.debug("execution target resolve skipped datasource {}", dataSourceId, e);
             return budget;
         } finally {
-            connectionContextService.clear();
+            restoreContext(previous);
         }
 
         for (String databaseName : databases) {
@@ -329,6 +333,7 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
      * the SQL completion reads, so a resolve after a completion costs no metadata round trip.
      */
     private boolean holds(Long dataSourceId, String databaseName, List<String> tableNames) {
+        ConnectInfo previous = Chat2DBContext.getConnectInfo();
         try {
             connectionContextService.bind(bindRequest(dataSourceId, databaseName, null));
             return availableNames(dataSourceId, databaseName).containsAll(tableNames);
@@ -336,8 +341,29 @@ public class DbExecutionDatasourceServiceImpl implements IDbExecutionDatasourceS
             log.debug("execution target resolve could not read datasource {} database {}", dataSourceId, databaseName, e);
             return false;
         } finally {
-            connectionContextService.clear();
+            restoreContext(previous);
         }
+    }
+
+    /**
+     * Drops the context this resolve bound and puts the caller's own back. A resolve that runs inside
+     * an execution shares the executor's thread, and the statements the plan does not relocate still
+     * run on the binding that was current before the resolve started - clearing it would leave them
+     * with no connection context at all.
+     */
+    private void restoreContext(ConnectInfo previous) {
+        ConnectInfo current = Chat2DBContext.getConnectInfo();
+        if (current == previous) {
+            return;
+        }
+        if (previous == null) {
+            connectionContextService.clear();
+            return;
+        }
+        if (current != null) {
+            Chat2DBContext.removeContext();
+        }
+        Chat2DBContext.putContext(previous);
     }
 
     private Set<String> availableNames(Long dataSourceId, String databaseName) {

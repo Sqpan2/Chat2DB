@@ -66,6 +66,8 @@ import {
   shouldResolveExecutionDatasource,
 } from './executionRelocation';
 import { resolveExecutionDatasourceScopes } from '@/components/SQLEditor/core/sqlCompletionScopes';
+import type { EditorTableIdentifier } from '@/components/SQLEditor/helper/tableIdentifier';
+import { locateTableInDatabaseTree } from '@/store/tree/tableTreeLocate';
 import SQLParserService from '@/service/sqlParser';
 import type { IExecutionDatasource } from '@/typings/sqlParser';
 import { useGlobalStore } from '@/store/global';
@@ -348,6 +350,47 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     }),
   );
   const [resultDataList, setResultDataList] = useState<IManageResultData[]>([]);
+
+  /**
+   * A double-clicked table name in the editor follows the object it names: the console re-points to the
+   * datasource that holds the table, and the left tree opens the node the way a double-click on it
+   * would have. A name the current binding already serves only moves the tree.
+   */
+  const handleTableIdentifierDoubleClick = useCallback(
+    async (identifier: EditorTableIdentifier | null) => {
+      if (!identifier?.tableName || typeof boundInfo?.dataSourceId !== 'number') {
+        return;
+      }
+      const lookupSql = `SELECT * FROM ${identifier.tableName}`;
+      let target: IExecutionDatasource | null = null;
+      if (shouldResolveExecutionDatasource(boundInfo, lookupSql)) {
+        const scopes = resolveExecutionDatasourceScopes(boundInfo, {
+          executedDataSourceIds: useWorkspaceStore.getState().recentExecutedDataSourceIds,
+          dataSourceNodes: useTreeStore.getState().dataSourceList || [],
+        });
+        target = await requestExecutionDatasource(boundInfo, lookupSql, scopes);
+      }
+      if (target?.dataSourceId && target.dataSourceId !== boundInfo.dataSourceId) {
+        const dataSourceNode = findDataSourceNode(useTreeStore.getState().dataSourceList, target.dataSourceId);
+        updateWorkspaceTabBoundInfo(relocateBoundInfo(boundInfo, target, dataSourceNode));
+        staticMessage.success(
+          `${i18n('workspace.text.consoleFollowsDataSource')} ${
+            target.dataSourceName || `#${target.dataSourceId}`
+          }${target.databaseName ? ` / ${target.databaseName}` : ''}`,
+        );
+      }
+      await locateTableInDatabaseTree(
+        {
+          dataSourceId: target?.dataSourceId ?? boundInfo.dataSourceId,
+          databaseName: target?.databaseName || identifier.databaseName || boundInfo.databaseName || undefined,
+          schemaName: target ? undefined : identifier.schemaName || boundInfo.schemaName || undefined,
+          tableName: identifier.tableName,
+        },
+        () => useTreeStore.getState(),
+      );
+    },
+    [boundInfo, updateWorkspaceTabBoundInfo],
+  );
   const pendingRowsRef = useRef<PendingSqlExecutionRows>(new Map());
   const pendingRowsFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closedSqlExecutionResultsRef = useRef<ClosedSqlExecutionResults>(new Map());
@@ -1226,6 +1269,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
         sqlActionEnabled={sqlActionEnabled}
         dataSourceState={dataSourceState}
         onChange={onEditorChange}
+        onTableIdentifierDoubleClick={handleTableIdentifierDoubleClick}
       />
     </div>
   );

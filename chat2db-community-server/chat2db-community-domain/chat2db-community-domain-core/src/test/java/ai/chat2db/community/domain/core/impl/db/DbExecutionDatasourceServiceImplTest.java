@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -354,6 +355,24 @@ class DbExecutionDatasourceServiceImplTest {
                 world.resolveStatementTargets(bound, "db58_hbg_governance", script);
 
         assertTrue(targets.isEmpty(), "a statement that already names its database keeps the whole script");
+    }
+
+    @Test
+    void leavesTheCallersBindingInPlaceAfterTheResolve() {
+        World world = new World();
+        long bound = world.datasource("test-ajk-user03").database("db58_hbg_audit", "audit_log").id();
+        world.datasource("test-ajk-user02").database("db58_hbg_ccf", "verify_task");
+        world.parse(SQL, SqlTypeEnum.SELECT, "verify_task");
+        ConnectInfo callers = connectInfo(bound, "test-ajk-user03");
+        Chat2DBContext.putContext(callers);
+        try {
+            world.resolve(bound, "db58_hbg_audit", SQL);
+
+            assertSame(callers, Chat2DBContext.getConnectInfo(),
+                    "a resolve on the execution thread must leave the binding the executor runs on");
+        } finally {
+            Chat2DBContext.removeContext();
+        }
     }
 
     private static final String DB_TYPE = "MYSQL";
