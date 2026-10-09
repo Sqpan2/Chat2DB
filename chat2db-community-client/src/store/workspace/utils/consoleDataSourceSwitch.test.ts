@@ -57,15 +57,53 @@ assert.equal(
   null,
   'the table data tab the double-click opens is not re-pointed',
 );
+assert.deepEqual(
+  resolveConsoleDataSourceSwitch(
+    consoleTab,
+    {
+      key: 'database_db58_hbg_ccf',
+      originalTitle: 'db58_hbg_ccf',
+      treeNodeType: TreeNodeType.DATABASE,
+      extraParams: {
+        dataSourceId: 7,
+        dataSourceName: 'test-ajk-user02.db.58dns.org',
+        databaseType: DatabaseTypeCode.MYSQL,
+        databaseName: 'db58_hbg_ccf',
+      },
+    },
+  ),
+  {
+    workspaceTabId: 11,
+    dataSourceId: 7,
+    dataSourceName: 'test-ajk-user02.db.58dns.org',
+    databaseType: DatabaseTypeCode.MYSQL,
+    databaseName: 'db58_hbg_ccf',
+    schemaName: undefined,
+    environmentId: undefined,
+    environment: undefined,
+    identityColor: undefined,
+  },
+  'double-clicking a database points the console at that database',
+);
 assert.equal(
   resolveConsoleDataSourceSwitch(consoleTab, {
-    key: 'database_db58_hbg_ccf',
-    originalTitle: 'db58_hbg_ccf',
-    treeNodeType: TreeNodeType.DATABASE,
+    key: 'view_order_view',
+    originalTitle: 'order_view',
+    treeNodeType: TreeNodeType.VIEW,
+    extraParams: { dataSourceId: 7, databaseName: 'db58_hbg_ccf' },
+  })?.dataSourceId,
+  7,
+  'a view names a datasource as readily as a table does',
+);
+assert.equal(
+  resolveConsoleDataSourceSwitch(consoleTab, {
+    key: 'dataSource_7',
+    originalTitle: 'test-ajk-user02.db.58dns.org',
+    treeNodeType: TreeNodeType.DATA_SOURCE,
     extraParams: { dataSourceId: 7, databaseName: 'db58_hbg_ccf' },
   }),
   null,
-  'only a table names a datasource and a database to point a console at',
+  'browsing the tree by expanding a datasource must not re-point the console',
 );
 assert.equal(
   resolveConsoleDataSourceSwitch(consoleTab, tableNode({ databaseName: 'db58_hbg_ccf' })),

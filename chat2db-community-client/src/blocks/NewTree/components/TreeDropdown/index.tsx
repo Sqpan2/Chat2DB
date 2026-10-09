@@ -1,6 +1,7 @@
 import React, { useState, memo, useImperativeHandle, forwardRef, useRef } from 'react';
 import { Dropdown } from 'antd';
 import { TreeNodeData } from '@/typings';
+import type { IWorkspaceTab } from '@/typings/workspace';
 import { OperationColumn } from '@/constants';
 import { ShortcutAction } from '@/constants/shortcut';
 import { useCreateRightClickMenu, canBeDoubleClicked } from '../../hooks/useCreateRightClickMenu';
@@ -28,17 +29,24 @@ export interface TreeDropdownRef {
   handleShortcut: (node: TreeNodeData, action: ShortcutAction) => Promise<boolean>;
 }
 
+/** The tab the user is looking at, as it is before a double-click opens or focuses anything. */
+function findActiveWorkspaceTab() {
+  const { activeConsoleId, workspaceTabList } = useWorkspaceStore.getState();
+  return workspaceTabList?.find((tab) => tab.id === activeConsoleId);
+}
+
 /**
  * Points the console the user is looking at at the datasource and database of the node they just
- * opened, so a table found in another datasource can be queried where it lives. The tab the node opens
- * itself is untouched: only a console tab owns a binding this may re-point.
+ * opened, so an object found in another datasource can be queried where it lives. The tab the node
+ * opens itself is untouched: only a console tab owns a binding this may re-point.
+ *
+ * @param activeTab tab that was active before the double-click, since the node's own tab takes the
+ * focus as it opens.
  */
-function switchActiveConsoleDataSource(node: TreeNodeData) {
-  const { activeConsoleId, workspaceTabList, updateWorkspaceTabBoundInfo } = useWorkspaceStore.getState();
-  const activeTab = workspaceTabList?.find((tab) => tab.id === activeConsoleId);
+function switchActiveConsoleDataSource(activeTab: IWorkspaceTab | undefined, node: TreeNodeData) {
   const binding = resolveConsoleDataSourceSwitch(activeTab, node);
   if (binding) {
-    updateWorkspaceTabBoundInfo(binding);
+    useWorkspaceStore.getState().updateWorkspaceTabBoundInfo(binding);
   }
 }
 
@@ -88,6 +96,9 @@ const TreeDropdown = (props: IProps, ref) => {
 
   // handles double-click events
   const handleDoubleClick = async (node: TreeNodeData) => {
+    // Read before anything opens: the tab a node opens takes the focus, and the console to re-point is
+    // the one the user was looking at when they double-clicked.
+    const activeTab = findActiveWorkspaceTab();
     if (canBeDoubleClicked.includes(node.treeNodeType)) {
       const capabilities = await loadResourceOperationCapabilities(node);
       const menu = createRightClickMenu(node, specialHandleLoadData || handleLoadData, capabilities);
@@ -99,9 +110,11 @@ const TreeDropdown = (props: IProps, ref) => {
           handled = true;
         }
       });
-      switchActiveConsoleDataSource(node);
+      switchActiveConsoleDataSource(activeTab, node);
       return handled;
     }
+    // A database is not opened by a double-click but expanded, and the console still follows it.
+    switchActiveConsoleDataSource(activeTab, node);
     return false;
   };
 
