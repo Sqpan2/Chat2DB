@@ -203,6 +203,25 @@ class DbSqlUnboundCompletionServiceImplTest {
     }
 
     @Test
+    void aFloodedDatabaseCannotPushTheColumnsOfLaterPairsOutOfTheMerge() {
+        List<SqlCompletionCandidate> flood = new ArrayList<>();
+        for (int index = 0; index < DbSqlUnboundCompletionServiceImpl.MAX_CANDIDATES_PER_PAIR + 50; index++) {
+            flood.add(candidate(SqlCompletionCandidateTypeEnum.TABLE, "table_" + index));
+        }
+        flood.add(candidate(SqlCompletionCandidateTypeEnum.COLUMN, "legacy_id"));
+        StubCompletionService completionService = new StubCompletionService();
+        completionService.respond("1/db_a", success(flood.toArray(SqlCompletionCandidate[]::new)));
+        completionService.respond("2/db_b", success(candidate(SqlCompletionCandidateTypeEnum.COLUMN, "review_id")));
+
+        SqlCompletionResponse response = newService(completionService).complete(request(List.of(
+                SqlCompletionScope.of(1L, "db_a", null),
+                SqlCompletionScope.of(2L, "db_b", null))));
+
+        assertTrue(labels(response).contains("review_id"),
+                "the column of the later pair must survive the first pair's flood");
+    }
+
+    @Test
     void keepsTheReplaceOffsetsOfTheFirstScope() {
         StubCompletionService completionService = new StubCompletionService();
         completionService.respond("1/db_a", success(3, 7, candidate(SqlCompletionCandidateTypeEnum.TABLE, "alpha")));

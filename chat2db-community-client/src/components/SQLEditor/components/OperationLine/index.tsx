@@ -11,7 +11,6 @@ import { IconButton } from '@chat2db/ui';
 import { keyboardKey } from '../../helper/utils';
 import { useZoerStore } from '@/store/zoer';
 import { isTemporaryId } from '@/utils';
-import { buildConsoleDefaultTabName } from '@/store/workspace/utils/consoleTabName';
 
 interface OperationLineProps {
   active: boolean;
@@ -101,7 +100,10 @@ const OperationLine = ({
   }, [type]);
 
   const handleChangeDBInfo = (_dbInfo: IDBInfo) => {
-    const nameCustomized = _dbInfo.nameCustomized ?? dbInfo.nameCustomized ?? false;
+    // A saved console keeps the name its owner gave it: switching the datasource re-points the
+    // binding, it does not rename the record. Only a console still carrying the generated default
+    // name follows its binding to a new generated name.
+    const nameCustomized = _dbInfo.nameCustomized ?? dbInfo.nameCustomized ?? undefined;
     const nextDBInfo = {
       ..._dbInfo,
       nameCustomized,
@@ -117,7 +119,6 @@ const OperationLine = ({
       databaseName: nextDBInfo.databaseName,
       schemaName: nextDBInfo.schemaName,
       type: nextDBInfo.databaseType,
-      name: nameCustomized ? undefined : buildConsoleDefaultTabName(nextDBInfo),
       nameCustomized,
     });
   };

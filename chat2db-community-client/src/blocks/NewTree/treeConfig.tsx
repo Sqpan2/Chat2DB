@@ -1439,6 +1439,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
                   status: item.status,
                   ddl: item.ddl,
                   connectable: item.connectable,
+                  nameCustomized: item.nameCustomized ?? undefined,
                 },
               };
             });
@@ -1462,9 +1463,11 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
 
   [TreeNodeType.SAVE_CONSOLE]: {
     renameCallback: (text: string, nodeData: TreeNodeData) => {
+      // A rename is the owner's name: mark it customized so a datasource switch never regenerates it.
       historyService.updateSavedConsole({
         id: nodeData.id!,
         name: text,
+        nameCustomized: true,
       });
     },
     createTreeNodeKey: (params) => {

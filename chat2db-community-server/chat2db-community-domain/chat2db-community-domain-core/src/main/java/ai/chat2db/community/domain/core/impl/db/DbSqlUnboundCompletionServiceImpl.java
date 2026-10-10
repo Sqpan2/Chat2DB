@@ -1,6 +1,7 @@
 package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.config.DBConfig;
+import ai.chat2db.community.domain.api.enums.completion.SqlCompletionCandidateTypeEnum;
 import ai.chat2db.community.domain.api.enums.completion.SqlCompletionStatusEnum;
 import ai.chat2db.community.domain.api.model.completion.SqlCompletionCandidate;
 import ai.chat2db.community.domain.api.model.completion.SqlCompletionEditorHint;
@@ -50,7 +51,10 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
     static final int MAX_SCOPE_DATABASES = 24;
 
     /** Upper bound for the merged candidate list. */
-    static final int MAX_MERGED_CANDIDATES = 400;
+    static final int MAX_MERGED_CANDIDATES = 1200;
+
+    /** Candidates of one datasource/database pair the merge keeps before it thins that pair out. */
+    static final int MAX_CANDIDATES_PER_PAIR = 200;
 
     /** Datasources a single fan-out may visit. */
     static final int MAX_SCOPES = 12;
@@ -253,9 +257,20 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
                 replaceEnd = response.getReplaceEnd();
             }
             String sortPrefix = String.format(Locale.ROOT, "%03d", scopeIndex);
+            // Columns are the scarce candidates a fan-out exists for: they survive the per-pair cap
+            // untouched, while the keyword and table flood of one database cannot crowd the pairs
+            // behind it out of the merged list.
+            int pairBudget = MAX_CANDIDATES_PER_PAIR;
             for (SqlCompletionCandidate candidate : response.getCandidates()) {
                 if (candidate == null || isFull()) {
                     continue;
+                }
+                boolean column = candidate.getType() == SqlCompletionCandidateTypeEnum.COLUMN;
+                if (!column) {
+                    if (pairBudget <= 0) {
+                        continue;
+                    }
+                    pairBudget--;
                 }
                 String label = candidate.getLabel();
                 if (StringUtils.isBlank(label)) {

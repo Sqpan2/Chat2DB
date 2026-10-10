@@ -332,6 +332,7 @@ const SaveList = ({ headerLeading }: SaveListProps) => {
           status: item.status,
           ddl: item.ddl,
           connectable: item.connectable,
+          nameCustomized: item.nameCustomized ?? undefined,
         },
       });
     });
@@ -579,6 +580,7 @@ const SaveList = ({ headerLeading }: SaveListProps) => {
           const params: any = {
             id: renamedConsole.id,
             name: renamedConsole.name,
+            nameCustomized: true,
           };
           historyServer.updateSavedConsole(params).then(() => {
             getSavedConsoleList();
