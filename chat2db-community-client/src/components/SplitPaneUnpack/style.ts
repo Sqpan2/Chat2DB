@@ -83,12 +83,12 @@ export const useStyles = createStyles(({ css, token }, direction: 'vertical' | '
           border-radius: 0px 6px 6px 0px;
           
           `}
-        background-color: ${token.colorFillSecondary};
-        color: ${token.colorTextSecondary};
+        background-color: ${token.colorSuccess};
+        color: #fff;
         cursor: pointer;
         &:hover {
-          background-color: ${token.colorFillTertiary};
-          color: ${token.colorPrimary};
+          background-color: ${token.colorSuccessHover};
+          color: #fff;
         }
         &:active {
           filter: brightness(1.1);

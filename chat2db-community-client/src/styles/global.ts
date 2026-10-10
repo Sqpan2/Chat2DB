@@ -20,8 +20,8 @@ const GlobalStyle = createGlobalStyle(({ theme: token }) => {
     * {
       scrollbar-color: ${token.colorFill} transparent;
       ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+        width: 9px;
+        height: 9px;
       }
 
       ::-webkit-scrollbar-thumb {
@@ -43,8 +43,8 @@ const GlobalStyle = createGlobalStyle(({ theme: token }) => {
     }
     .bashful-scroller {
       &::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+        width: 9px;
+        height: 9px;
       }
 
       &::-webkit-scrollbar-thumb {

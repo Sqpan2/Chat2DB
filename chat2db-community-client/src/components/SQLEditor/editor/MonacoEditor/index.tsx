@@ -230,6 +230,11 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
         lineDecorationsWidth: 24,
         lineNumbersMinChars: 2,
         automaticLayout: true,
+        scrollbar: {
+          verticalScrollbarSize: 21,
+          horizontalScrollbarSize: 21,
+          useShadows: false,
+        },
         hover: {
           enabled: true,
           delay: 500,

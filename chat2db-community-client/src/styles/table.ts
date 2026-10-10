@@ -10,7 +10,7 @@ export const useTableStyles = createStyles(({ css, token }) => {
       overflow-y: auto;
       position: relative;
       ::-webkit-scrollbar {
-        width: 8px;
+        width: 12px;
       }
       .art-table {
         th {
@@ -56,7 +56,7 @@ export const useTableStyles = createStyles(({ css, token }) => {
         margin-top: 0px !important;
         scrollbar-color: auto;
         ::-webkit-scrollbar {
-          height: 8px;
+          height: 12px;
         }
         ::-webkit-scrollbar-thumb {
           background-color: ${token.colorFill};
