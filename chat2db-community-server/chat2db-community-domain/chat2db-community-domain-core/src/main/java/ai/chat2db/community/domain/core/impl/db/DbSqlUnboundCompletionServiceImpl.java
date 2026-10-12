@@ -61,6 +61,13 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
 
     private static final String MERGE_KEY_SEPARATOR = " ";
 
+    /**
+     * sortText prefix for statement-level candidates (keywords, snippets). It sorts before every
+     * numeric scope prefix, so keywords always lead the suggestion list no matter how many tables
+     * the fan-out collects.
+     */
+    private static final String SYNTAX_SORT_PREFIX = "!";
+
     private final IDbSqlCompletionService sqlCompletionService;
     private final IDbConnectionContextService connectionContextService;
 
@@ -86,7 +93,31 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
             int left = collectScope(param, scopes.get(index), merge, scopeBudget);
             remainingPairs -= scopeBudget - left;
         }
-        return merge.toResponse();
+        SqlCompletionResponse response = merge.toResponse();
+        logCompletionOutcome(param, scopes.size(), response);
+        return response;
+    }
+
+    private void logCompletionOutcome(DbSqlUnboundCompletionRequest param, int scopeCount,
+                                      SqlCompletionResponse response) {
+        if (!log.isDebugEnabled() || response == null || response.getCandidates() == null) {
+            return;
+        }
+        long keywordCount = response.getCandidates().stream()
+                .filter(candidate -> candidate != null
+                        && candidate.getType() == SqlCompletionCandidateTypeEnum.KEYWORD)
+                .count();
+        long tableCount = response.getCandidates().stream()
+                .filter(candidate -> candidate != null
+                        && candidate.getType() == SqlCompletionCandidateTypeEnum.TABLE)
+                .count();
+        String cursorTail = param.getSql() == null ? ""
+                : StringUtils.abbreviate(param.getSql().substring(0,
+                        Math.min(param.getSql().length(), Math.max(0, param.getCursor() == null ? 0
+                                : param.getCursor()))), 80);
+        log.debug("unbound completion: scopes={} candidates={} keywords={} tables={} status={} cursor=[{}]",
+                scopeCount, response.getCandidates().size(), keywordCount, tableCount,
+                response.getStatus(), cursorTail);
     }
 
     /**
@@ -218,7 +249,13 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
      */
     static final class Merge {
 
-        private final List<SqlCompletionCandidate> candidates = new ArrayList<>();
+        /**
+         * Statement-level candidates (keywords, snippets) are kept apart so they always lead the
+         * merged list: a metadata flood from one database must never push the keywords the cursor
+         * can start a statement with out of sight.
+         */
+        private final List<SqlCompletionCandidate> syntaxCandidates = new ArrayList<>();
+        private final List<SqlCompletionCandidate> metadataCandidates = new ArrayList<>();
         private final Set<String> seenLabels = new HashSet<>();
         private final Set<String> usedIds = new HashSet<>();
         private List<SqlCompletionEditorHint> editorHints;
@@ -227,7 +264,7 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
         private int replaceEnd = -1;
 
         boolean isFull() {
-            return candidates.size() >= MAX_MERGED_CANDIDATES;
+            return syntaxCandidates.size() + metadataCandidates.size() >= MAX_MERGED_CANDIDATES;
         }
 
         /**
@@ -289,22 +326,41 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
                     candidate.setDatasourceName(datasourceName);
                 }
                 // Later scopes sort behind earlier ones while keeping their own ordering inside a scope.
-                candidate.setSortText(sortPrefix + StringUtils.defaultString(candidate.getSortText()));
+                // Statement-level candidates lead every metadata candidate regardless of scope, so a
+                // table flood cannot hide the keywords the cursor can start a statement with.
+                if (isSyntaxCandidate(candidate)) {
+                    candidate.setSortText(SYNTAX_SORT_PREFIX + StringUtils.defaultString(candidate.getSortText()));
+                } else {
+                    candidate.setSortText(sortPrefix + StringUtils.defaultString(candidate.getSortText()));
+                }
                 if (candidate.getId() != null && !usedIds.add(candidate.getId())) {
                     candidate.setId(scopeIndex + ":" + candidate.getId());
                     usedIds.add(candidate.getId());
                 }
-                candidates.add(candidate);
+                if (isSyntaxCandidate(candidate)) {
+                    syntaxCandidates.add(candidate);
+                } else {
+                    metadataCandidates.add(candidate);
+                }
             }
             scopeIndex++;
         }
 
+        private static boolean isSyntaxCandidate(SqlCompletionCandidate candidate) {
+            return candidate.getType() == SqlCompletionCandidateTypeEnum.KEYWORD
+                    || candidate.getType() == SqlCompletionCandidateTypeEnum.SNIPPET;
+        }
+
         SqlCompletionResponse toResponse() {
-            if (candidates.isEmpty() && (editorHints == null || editorHints.isEmpty())) {
+            if (syntaxCandidates.isEmpty() && metadataCandidates.isEmpty()
+                    && (editorHints == null || editorHints.isEmpty())) {
                 return SqlCompletionResponse.empty();
             }
+            List<SqlCompletionCandidate> merged = new ArrayList<>(syntaxCandidates.size() + metadataCandidates.size());
+            merged.addAll(syntaxCandidates);
+            merged.addAll(metadataCandidates);
             SqlCompletionResponse response =
-                    SqlCompletionResponse.success(Math.max(0, replaceStart), Math.max(0, replaceEnd), candidates);
+                    SqlCompletionResponse.success(Math.max(0, replaceStart), Math.max(0, replaceEnd), merged);
             if (editorHints != null && !editorHints.isEmpty()) {
                 response.setEditorHints(editorHints);
             }

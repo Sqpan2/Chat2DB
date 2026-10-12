@@ -239,6 +239,31 @@ class DbSqlUnboundCompletionServiceImplTest {
     }
 
     @Test
+    void keywordsLeadTheMergeAheadOfTheTableFlood() {
+        List<SqlCompletionCandidate> flood = new ArrayList<>();
+        for (int index = 0; index < DbSqlUnboundCompletionServiceImpl.MAX_CANDIDATES_PER_PAIR; index++) {
+            flood.add(candidate(SqlCompletionCandidateTypeEnum.TABLE, "table_" + index));
+        }
+        flood.add(candidate(SqlCompletionCandidateTypeEnum.KEYWORD, "select"));
+        StubCompletionService completionService = new StubCompletionService();
+        completionService.respond("1/db_a", success(flood.toArray(SqlCompletionCandidate[]::new)));
+        completionService.respond("2/db_b", success(
+                candidate(SqlCompletionCandidateTypeEnum.TABLE, "beta"),
+                candidate(SqlCompletionCandidateTypeEnum.KEYWORD, "from")));
+
+        SqlCompletionResponse response = newService(completionService).complete(request(List.of(
+                SqlCompletionScope.of(1L, "db_a", null),
+                SqlCompletionScope.of(2L, "db_b", null))));
+
+        List<String> mergedLabels = labels(response);
+        assertEquals("select", mergedLabels.get(0),
+                "keywords must lead the merged list so a table flood cannot hide them");
+        assertEquals("from", mergedLabels.get(1),
+                "every statement-level keyword is hoisted ahead of the metadata");
+        assertEquals(SqlCompletionCandidateTypeEnum.KEYWORD, response.getCandidates().get(0).getType());
+    }
+
+    @Test
     void keepsTheReplaceOffsetsOfTheFirstScope() {
         StubCompletionService completionService = new StubCompletionService();
         completionService.respond("1/db_a", success(3, 7, candidate(SqlCompletionCandidateTypeEnum.TABLE, "alpha")));

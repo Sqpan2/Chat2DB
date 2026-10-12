@@ -647,7 +647,7 @@ class CompletionProviderManager {
     const scopes = this.resolveTipsScopes(dbInfo);
     if (scopes.length) {
       try {
-        return await SQLParserService.queryUnboundTips({
+        const result = await SQLParserService.queryUnboundTips({
           consoleId: completionContextId,
           ...this.getTipsQuerySqlPayload(params),
           scopes,
@@ -655,6 +655,8 @@ class CompletionProviderManager {
           ...(keywordCase ? { keywordCase } : {}),
           activeSnippetSlot,
         });
+        this.logUnboundCompletionResult(scopes.length, result);
+        return result;
       } catch (error) {
         if (!isExpectedSqlCompletionPermissionError(error)) {
           console.error('Error fetching unbound tips:', error);
@@ -695,6 +697,16 @@ class CompletionProviderManager {
       executedDataSourceIds: useWorkspaceStore.getState().recentExecutedDataSourceIds,
       dataSourceNodes: useTreeStore.getState().dataSourceList || [],
     });
+  }
+
+  private logUnboundCompletionResult(scopeCount: number, result: ISqlCompletionResult | null | undefined): void {
+    const candidates = result?.candidates || [];
+    const keywordCount = candidates.filter((candidate) => candidate.type === 'KEYWORD').length;
+    const tableCount = candidates.filter((candidate) => candidate.type === 'TABLE').length;
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[completion] unbound scopes=${scopeCount} candidates=${candidates.length} keywords=${keywordCount} tables=${tableCount}`,
+    );
   }
 
   private getTipsQuerySqlPayload(
