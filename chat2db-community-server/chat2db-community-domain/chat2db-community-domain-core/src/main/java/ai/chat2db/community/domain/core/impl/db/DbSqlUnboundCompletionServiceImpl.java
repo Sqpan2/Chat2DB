@@ -257,16 +257,20 @@ public class DbSqlUnboundCompletionServiceImpl implements IDbSqlUnboundCompletio
                 replaceEnd = response.getReplaceEnd();
             }
             String sortPrefix = String.format(Locale.ROOT, "%03d", scopeIndex);
-            // Columns are the scarce candidates a fan-out exists for: they survive the per-pair cap
-            // untouched, while the keyword and table flood of one database cannot crowd the pairs
-            // behind it out of the merged list.
+            // Columns and keywords are the scarce candidates a fan-out exists for: they survive the
+            // per-pair cap untouched, while the table and function flood of one database cannot
+            // crowd the pairs behind it out of the merged list.
             int pairBudget = MAX_CANDIDATES_PER_PAIR;
             for (SqlCompletionCandidate candidate : response.getCandidates()) {
                 if (candidate == null || isFull()) {
                     continue;
                 }
-                boolean column = candidate.getType() == SqlCompletionCandidateTypeEnum.COLUMN;
-                if (!column) {
+                boolean exempt = candidate.getType() == SqlCompletionCandidateTypeEnum.COLUMN
+                        || candidate.getType() == SqlCompletionCandidateTypeEnum.KEYWORD
+                        || candidate.getType() == SqlCompletionCandidateTypeEnum.ALL_COLUMN
+                        || candidate.getType() == SqlCompletionCandidateTypeEnum.JOIN_CLAUSE
+                        || candidate.getType() == SqlCompletionCandidateTypeEnum.SNIPPET;
+                if (!exempt) {
                     if (pairBudget <= 0) {
                         continue;
                     }

@@ -222,6 +222,23 @@ class DbSqlUnboundCompletionServiceImplTest {
     }
 
     @Test
+    void keywordsSurviveThePairCapTheTablesDoNot() {
+        List<SqlCompletionCandidate> flood = new ArrayList<>();
+        for (int index = 0; index < DbSqlUnboundCompletionServiceImpl.MAX_CANDIDATES_PER_PAIR + 50; index++) {
+            flood.add(candidate(SqlCompletionCandidateTypeEnum.TABLE, "table_" + index));
+        }
+        flood.add(candidate(SqlCompletionCandidateTypeEnum.KEYWORD, "select"));
+        StubCompletionService completionService = new StubCompletionService();
+        completionService.respond("1/db_a", success(flood.toArray(SqlCompletionCandidate[]::new)));
+
+        SqlCompletionResponse response = newService(completionService)
+                .complete(request(List.of(SqlCompletionScope.of(1L, "db_a", null))));
+
+        assertTrue(labels(response).contains("select"),
+                "keywords are statement-level candidates and may never be thinned away");
+    }
+
+    @Test
     void keepsTheReplaceOffsetsOfTheFirstScope() {
         StubCompletionService completionService = new StubCompletionService();
         completionService.respond("1/db_a", success(3, 7, candidate(SqlCompletionCandidateTypeEnum.TABLE, "alpha")));
