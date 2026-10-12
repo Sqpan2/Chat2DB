@@ -875,6 +875,24 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     }
   }, [isSplitPane, boxRightConsoleHeight, setBoxRightConsoleHeight]);
 
+  // A query that came back with results lifts a packed result pane up again, so
+  // the rows land somewhere visible. The signature keeps the reopen tied to the
+  // arrival of a new result set: packing the pane by hand while the same results
+  // sit there does not fight the user.
+  const autoOpenedResultSignatureRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const signature = resultDataList.length
+      ? `${resultDataList.length}:${resultDataList[0]?.uuid ?? ''}`
+      : '';
+    if (!signature || signature === autoOpenedResultSignatureRef.current) {
+      return;
+    }
+    autoOpenedResultSignatureRef.current = signature;
+    if (!boxRightConsoleHeight) {
+      setBoxRightConsoleHeight('50%');
+    }
+  }, [resultDataList, boxRightConsoleHeight, setBoxRightConsoleHeight]);
+
   const isActive = useMemo(() => {
     return activeConsoleId === editorId || !!props.isActive;
   }, [activeConsoleId, editorId, props.isActive]);
