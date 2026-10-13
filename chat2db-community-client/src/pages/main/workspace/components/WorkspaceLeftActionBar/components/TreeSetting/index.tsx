@@ -6,6 +6,7 @@ import { EllipsisVertical } from 'lucide-react';
 import i18n from '@/i18n';
 import { useTreeStore } from '@/store/tree';
 import { exportConnections } from './exportConnections';
+import { exportWorkspace } from '../../../WorkspaceTransfer';
 import { WORKSPACE_TREE_TOOLBAR_SECONDARY_BUTTON_SIZE } from '../../constants';
 
 export default memo(() => {
@@ -96,6 +97,14 @@ export default memo(() => {
         label: i18n('workspace.menu.exportConnections'),
         onClick: () => {
           exportConnections({ datasourceIds: null });
+        },
+      },
+      {
+        key: 'export-workspace',
+        icon: <IconfontSvg code="icon-download" size="lg" />,
+        label: i18n('workspace.menu.exportWorkspace'),
+        onClick: () => {
+          void exportWorkspace();
         },
       },
     ];

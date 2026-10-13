@@ -2,7 +2,7 @@ import i18n from '@/i18n';
 import { IconButton, IconfontSvg } from '@chat2db/ui';
 import { ConfigProvider, Dropdown, Input, Modal, Tooltip } from 'antd';
 import { Search } from 'lucide-react';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useStyles } from './style';
 
 import ConnectionEdit, { submitType } from '@/components/ConnectionEdit';
@@ -10,6 +10,7 @@ import { applyConnectionIdentityColorUpdate } from '@/components/ConnectionEdit/
 import FileUploadModal, { importConfigList } from '@/components/ImportConnection';
 import { ImportConnectionType } from '@/constants/database';
 import connectionService from '@/service/connection';
+import { importWorkspace } from '../../../WorkspaceTransfer';
 
 // ----- constants/typings -----
 import { databaseMap, databaseTypeList } from '@/constants';
@@ -17,6 +18,7 @@ import { getDynamicDatabaseVersion, subscribeDynamicDatabases } from '@/utils/dy
 
 // ----- store -----
 import { useTreeStore } from '@/store/tree';
+import { useWorkspaceStore } from '@/store/workspace';
 import { WORKSPACE_TREE_TOOLBAR_BUTTON_SIZE } from '../../constants';
 
 const ADD_DATASOURCE_BUTTON_SIZE = {
@@ -33,6 +35,7 @@ export default memo<IProps>(() => {
   } = useStyles();
   const [importType, setImportType] = useState<string>();
   const [databaseSearchKeyword, setDatabaseSearchKeyword] = useState('');
+  const workspaceImportFileInputRef = useRef<HTMLInputElement>(null);
   // Dynamic databases register asynchronously after mount; re-render the menu
   // when they land so the memoized list is not a stale snapshot.
   const [dynamicDatabaseVersion, setDynamicDatabaseVersion] = useState(getDynamicDatabaseVersion());
@@ -158,6 +161,14 @@ export default memo<IProps>(() => {
           label: i18n('workspace.menu.importConnection'),
           icon: <IconfontSvg code="icon-upload" size="lg" />,
           children: importTypeItems,
+        },
+        {
+          key: 'import-workspace',
+          label: i18n('workspace.menu.importWorkspace'),
+          icon: <IconfontSvg code="icon-upload" size="lg" />,
+          onClick: () => {
+            workspaceImportFileInputRef.current?.click();
+          },
         },
       ],
     };
@@ -288,6 +299,25 @@ export default memo<IProps>(() => {
         onConfirm={() => {
           setImportType(undefined);
           refreshTreeData();
+        }}
+      />
+      <input
+        ref={workspaceImportFileInputRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file) {
+            return;
+          }
+          importWorkspace(file)
+            .then(() => {
+              refreshTreeData();
+              useWorkspaceStore.getState().getSavedConsoleList();
+            })
+            .catch(() => undefined);
         }}
       />
     </>

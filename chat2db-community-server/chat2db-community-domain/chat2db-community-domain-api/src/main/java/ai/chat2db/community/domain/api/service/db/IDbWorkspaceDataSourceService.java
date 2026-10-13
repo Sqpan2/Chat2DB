@@ -60,4 +60,17 @@ public interface IDbWorkspaceDataSourceService {
     List<WorkspaceDataSource> exportDataSources(List<Long> datasourceIds);
 
     List<WorkspaceDataSource> exportDisplayDataSources(List<Long> datasourceIds);
+
+    /**
+     * Exports datasources with their sensitive fields (password, host, url, user) decrypted to plaintext.
+     *
+     * <p>Unlike {@link #exportDisplayDataSources(List)}, which clears the password for Community builds,
+     * this variant is meant for a full workspace migration where the user explicitly opts into carrying
+     * credentials across machines. The caller is responsible for warning the user that the exported file
+     * contains readable passwords.</p>
+     *
+     * @param datasourceIds identifiers to export; {@code null}/{@code empty} exports every datasource.
+     * @return datasources with decrypted sensitive fields and {@code spaceId} cleared.
+     */
+    List<WorkspaceDataSource> exportDataSourcesWithPlainPassword(List<Long> datasourceIds);
 }

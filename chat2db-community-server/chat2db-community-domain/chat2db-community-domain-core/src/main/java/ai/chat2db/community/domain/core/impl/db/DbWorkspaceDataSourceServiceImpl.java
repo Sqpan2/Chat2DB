@@ -159,6 +159,29 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
                 .toList();
     }
 
+    @Override
+    public List<WorkspaceDataSource> exportDataSourcesWithPlainPassword(List<Long> datasourceIds) {
+        return exportDataSources(datasourceIds).stream()
+                .map(this::preparePlainPasswordExportDataSource)
+                .toList();
+    }
+
+    /**
+     * Prepares a datasource for a full workspace migration: a defensive copy whose sensitive fields
+     * (password, host, url, user) are decrypted to plaintext and whose {@code spaceId} is cleared.
+     * Local/offline persistence uses the AES-GCM machine key; cloud storage decrypts with the
+     * organization token. Non-exportable (e.g. copied-from-null) entries are skipped.
+     */
+    private WorkspaceDataSource preparePlainPasswordExportDataSource(WorkspaceDataSource dataSource) {
+        dataSource = copyDataSource(dataSource);
+        if (dataSource == null) {
+            return null;
+        }
+        decryptSensitiveFields(dataSource);
+        dataSource.setSpaceId(null);
+        return dataSource;
+    }
+
     private void validateSupportedDataSource(WorkspaceDataSource dataSource) {
         if (!ConfigUtils.isDesktop()
                 && ConfigUtils.isRelease()

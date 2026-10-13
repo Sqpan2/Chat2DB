@@ -138,8 +138,9 @@ public class DbDataSourceController {
      */
     @RequestMapping(value = "/datasource/export", method = {RequestMethod.POST})
     public DataResult<ProgressResponse> exportDataSource(@RequestBody DataSourceExportRequest request) {
-        List<DataSourceResponse> dataSourceResponses = workspaceDataSourceService
-                .exportDisplayDataSources(request.getDatasourceIds())
+        List<DataSourceResponse> dataSourceResponses = (Boolean.TRUE.equals(request.getIncludePassword())
+                ? workspaceDataSourceService.exportDataSourcesWithPlainPassword(request.getDatasourceIds())
+                : workspaceDataSourceService.exportDisplayDataSources(request.getDatasourceIds()))
                 .stream()
                 .map(dataSourceWebConverter::storage2response)
                 .toList();

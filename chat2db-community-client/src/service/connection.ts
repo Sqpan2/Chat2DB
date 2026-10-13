@@ -157,7 +157,7 @@ const importDatagripConnections = createRequest<{ text: string }, void>('/api/co
 });
 
 const exportDataSource = createRequest<
-  { datasourceIds: number[] | null },
+  { datasourceIds: number[] | null; includePassword?: boolean },
   {
     count: number;
     message: string;
