@@ -130,6 +130,10 @@ export function parseWorkspaceExportFile(fileContent: string): WorkspaceExportFi
 /**
  * Resolves a target datasource id for an imported console by matching the exported datasource name.
  * Returns undefined when no matching datasource was imported (the console keeps "未指定数据源").
+ *
+ * Datasource aliases historically carried a leading "@" (e.g. "@test-ajk02.db.58dns.org") while the
+ * console's recorded dataSourceName may still hold that legacy form even after the alias was renamed
+ * without it. Normalize both sides by stripping a leading "@" so legacy consoles re-link correctly.
  */
 export function resolveConsoleDataSourceId(
   dataSourceName: string | undefined,
@@ -138,5 +142,10 @@ export function resolveConsoleDataSourceId(
   if (!dataSourceName) {
     return undefined;
   }
-  return nameToId.get(dataSourceName);
+  const direct = nameToId.get(dataSourceName);
+  if (direct !== undefined) {
+    return direct;
+  }
+  const normalized = dataSourceName.startsWith('@') ? dataSourceName.slice(1) : dataSourceName;
+  return normalized === dataSourceName ? undefined : nameToId.get(normalized);
 }

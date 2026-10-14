@@ -72,6 +72,8 @@ function shouldResolveConsoleDataSourceIdByName() {
   assert.equal(resolveConsoleDataSourceId('test-ajk02', nameToId), 42);
   assert.equal(resolveConsoleDataSourceId('missing', nameToId), undefined);
   assert.equal(resolveConsoleDataSourceId(undefined, nameToId), undefined);
+  // Legacy "@"-prefixed dataSourceName re-links after normalization.
+  assert.equal(resolveConsoleDataSourceId('@test-ajk02', nameToId), 42);
 }
 
 async function main() {

@@ -91,6 +91,12 @@ export async function runWorkspaceImport(
       const created = await dependencies.createDataSource(dataSource);
       if (created?.id && dataSource.alias) {
         nameToId.set(dataSource.alias, created.id);
+        // Register the "@"-normalized alias too, so consoles that still record the legacy
+        // "@host" form (or vice versa) re-link to the freshly created datasource.
+        const normalizedAlias = dataSource.alias.startsWith('@')
+          ? dataSource.alias.slice(1)
+          : `@${dataSource.alias}`;
+        nameToId.set(normalizedAlias, created.id);
       }
       importedDataSources += 1;
     } catch {
@@ -158,7 +164,9 @@ export function createWorkspaceTransferDependencies(): WorkspaceTransferDependen
         name: params.name,
         nameCustomized: true,
         ddl: params.ddl || '',
-        status: ConsoleStatus.DRAFT,
+        // Imported consoles must land as RELEASE so they show up in the saved-console tree,
+        // which only lists RELEASE entries. DRAFT consoles are invisible in the UI.
+        status: ConsoleStatus.RELEASE,
         operationType: WorkspaceTabType.CONSOLE,
         type: params.type,
         dataSourceId: params.dataSourceId as number,
