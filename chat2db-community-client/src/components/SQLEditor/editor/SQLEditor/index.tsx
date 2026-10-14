@@ -932,16 +932,23 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
       const position = editor.getPosition();
       if (!position) return;
 
-      await handleSQLParserRightNow(editor.getValue(), dbInfo, true);
-
-      // Find the current SQL statement.
+      // Reuse the full parser results (sqlStatementListRef) instead of re-parsing
+      // with the quick parser here: overwriting the list with quick-parser output
+      // (which can be null for large/complex SQL) both breaks this lookup and
+      // permanently disables the execute-button decorations afterwards.
       const currentStatement = (sqlStatementListRef.current || []).find(
         (stmt) => position?.lineNumber >= stmt.sqlStartRowNum && position?.lineNumber <= stmt.sqlEndRowNum,
       );
-      if (!currentStatement) return;
 
-      // Execute the SQL statement.
-      action(SQLOptType.EXECUTE_SINGLE_SQL, currentStatement?.sql ?? '');
+      if (currentStatement?.sql) {
+        // Execute the located SQL statement directly.
+        action(SQLOptType.EXECUTE_SINGLE_SQL, currentStatement.sql);
+        return;
+      }
+
+      // Fallback: let the downstream handler resolve SQL from the current
+      // selection / cursor position so the click is never a dead no-op.
+      action(SQLOptType.EXECUTE_SINGLE_SQL);
     };
 
     const handleHover = useCallback(

@@ -296,6 +296,18 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
 
     if (active) {
       if (editor) {
+        // The editor may have been created while the tab was hidden (display:none),
+        // which leaves Monaco with a stale/zero-sized viewport after restart.
+        // automaticLayout's ResizeObserver is not reliable for that transition
+        // (especially inside JCEF), so force an explicit relayout when the tab
+        // becomes visible.
+        requestAnimationFrame(() => {
+          try {
+            sqlEditorRef.current?.getInstance()?.layout();
+          } catch (error) {
+            console.warn('Failed to layout editor:', error);
+          }
+        });
         editor.focus();
         // Use setTimeout so Monaco Editor can finish layout and rendering.
         // Avoid focusing during DOM updates, which may fail.
@@ -304,9 +316,13 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
             // Check editor again because it may have been disposed during the delay.
             if (sqlEditorRef.current?.getInstance()) {
               const currentEditor = sqlEditorRef.current.getInstance();
-              if (currentEditor && !currentEditor.hasTextFocus()) {
-                currentEditor.focus();
-                currentEditor.setPosition(lastPositionRef.current);
+              if (currentEditor) {
+                // Relayout again after the tab is fully visible, then restore focus.
+                currentEditor.layout();
+                if (!currentEditor.hasTextFocus()) {
+                  currentEditor.focus();
+                  currentEditor.setPosition(lastPositionRef.current);
+                }
               }
             }
           } catch (error) {
@@ -382,7 +398,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         handleRevertRoutineDDL();
         break;
       case SQLOptType.EXECUTE_SINGLE_SQL:
-        handleExecuteSingleSQL();
+        handleExecuteSingleSQL(params?.sql);
         break;
       case SQLOptType.EXECUTE_SHORTCUT_SQL:
         handleShortCutExecuteSQL();
@@ -884,10 +900,10 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
   /**
    * Execute one SQL statement.
    */
-  const handleExecuteSingleSQL = () => {
+  const handleExecuteSingleSQL = (presetSql?: string) => {
     const selectSQL = sqlEditorRef.current?.getSelectedContent() || '';
     const cursorSQL = sqlEditorRef.current?.getCursorCurLineNearestSQL() || '';
-    const sql = selectSQL || cursorSQL;
+    const sql = presetSql || selectSQL || cursorSQL;
     if (!sql) {
       staticMessage.warning(i18n('common.placeholder.select', 'SQL'));
       return;
