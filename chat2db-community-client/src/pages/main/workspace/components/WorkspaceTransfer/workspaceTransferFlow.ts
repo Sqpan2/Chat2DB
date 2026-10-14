@@ -4,6 +4,7 @@ import { ConsoleStatus, WorkspaceTabType } from '@/constants';
 import { saveFileToDesktop } from '@/utils/file';
 import {
   buildWorkspaceExportFile,
+  dataSourceIdentityKey,
   parseWorkspaceExportFile,
   resolveConsoleDataSourceId,
   type WorkspaceExportDataSource,
@@ -15,8 +16,17 @@ export interface WorkspaceTransferDependencies {
   exportDataSources: (params: { datasourceIds: number[] | null; includePassword?: boolean }) => Promise<{
     message: string;
   }>;
+  listDataSources: () => Promise<{ id: number; alias?: string; type?: string }[]>;
   listSavedConsoles: () => Promise<
-    { name: string; ddl: string; type?: string; dataSourceName?: string; databaseName?: string; schemaName?: string }[]
+    {
+      id: number;
+      name: string;
+      ddl: string;
+      type?: string;
+      dataSourceName?: string;
+      databaseName?: string;
+      schemaName?: string;
+    }[]
   >;
   createDataSource: (dataSource: WorkspaceExportDataSource) => Promise<{ id: number; alias: string }>;
   createConsole: (params: {
@@ -27,23 +37,26 @@ export interface WorkspaceTransferDependencies {
     databaseName?: string;
     schemaName?: string;
   }) => Promise<unknown>;
+  deleteDataSource: (id: number) => Promise<unknown>;
+  deleteConsole: (id: number) => Promise<unknown>;
   saveFile: (file: {
     fileName: string;
     fileContent: string;
     fileType: string;
   }) => Promise<{ path: string } | null | undefined>;
   readFileContent: (file: File) => Promise<string>;
-  resolveImportedName: (
-    baseName: string,
-    existingNames: ReadonlySet<string>,
-    importedNames: ReadonlySet<string>,
-  ) => string;
 }
 
 export interface WorkspaceImportResult {
   importedDataSources: number;
   importedConsoles: number;
   skippedConsoles: number;
+  skippedDataSources: number;
+}
+
+export interface WorkspaceClearResult {
+  deletedDataSources: number;
+  deletedConsoles: number;
 }
 
 /** Exports every datasource (with plaintext credentials) and every saved console into one JSON file. */
@@ -75,7 +88,8 @@ export async function runWorkspaceExport(
 
 /**
  * Imports a workspace export file: recreates datasources, then recreates consoles re-linked to the
- * newly created datasources by name. Existing records are never overwritten.
+ * newly created datasources by name. Datasources whose (alias, type) already exist and consoles
+ * whose name already exists are skipped as duplicates, so re-importing the same file is a no-op.
  */
 export async function runWorkspaceImport(
   file: File,
@@ -85,18 +99,35 @@ export async function runWorkspaceImport(
   const exportFile = parseWorkspaceExportFile(content);
 
   const nameToId = new Map<string, number>();
+  const registerDataSourceName = (alias: string, id: number) => {
+    nameToId.set(alias, id);
+    // Register the "@"-normalized alias too, so consoles that still record the legacy
+    // "@host" form (or vice versa) re-link to the datasource.
+    nameToId.set(alias.startsWith('@') ? alias.slice(1) : `@${alias}`, id);
+  };
+
+  const existingDataSources = await dependencies.listDataSources().catch(() => []);
+  const existingDataSourceIds = new Map<string, number>();
+  for (const item of existingDataSources || []) {
+    if (item?.alias) {
+      existingDataSourceIds.set(dataSourceIdentityKey(item.alias, item.type), item.id);
+    }
+  }
+
   let importedDataSources = 0;
+  let skippedDataSources = 0;
   for (const dataSource of exportFile.dataSources) {
+    const duplicateId = existingDataSourceIds.get(dataSourceIdentityKey(dataSource.alias, dataSource.type));
+    if (duplicateId != null && dataSource.alias) {
+      // Already present: skip creation but keep the existing id so consoles still re-link.
+      registerDataSourceName(dataSource.alias, duplicateId);
+      skippedDataSources += 1;
+      continue;
+    }
     try {
       const created = await dependencies.createDataSource(dataSource);
       if (created?.id && dataSource.alias) {
-        nameToId.set(dataSource.alias, created.id);
-        // Register the "@"-normalized alias too, so consoles that still record the legacy
-        // "@host" form (or vice versa) re-link to the freshly created datasource.
-        const normalizedAlias = dataSource.alias.startsWith('@')
-          ? dataSource.alias.slice(1)
-          : `@${dataSource.alias}`;
-        nameToId.set(normalizedAlias, created.id);
+        registerDataSourceName(dataSource.alias, created.id);
       }
       importedDataSources += 1;
     } catch {
@@ -104,20 +135,29 @@ export async function runWorkspaceImport(
     }
   }
 
-  const existingConsoleNames = new Set<string>();
+  const existingConsoles = await dependencies.listSavedConsoles().catch(() => []);
+  const existingConsoleNames = new Set<string>(
+    (existingConsoles || []).map((item) => (item?.name || '').trim()).filter(Boolean),
+  );
   const importedConsoleNames = new Set<string>();
   let importedConsoles = 0;
   let skippedConsoles = 0;
   for (const console of exportFile.consoles) {
-    if (!console?.name) {
+    const consoleName = (console?.name || '').trim();
+    if (!consoleName) {
       skippedConsoles += 1;
       continue;
     }
-    const name = dependencies.resolveImportedName(console.name, existingConsoleNames, importedConsoleNames);
-    importedConsoleNames.add(name);
+    if (existingConsoleNames.has(consoleName) || importedConsoleNames.has(consoleName)) {
+      // Duplicate: the same named saved console already exists (or was imported earlier in this
+      // run), so skip instead of creating a copy.
+      skippedConsoles += 1;
+      continue;
+    }
+    importedConsoleNames.add(consoleName);
     try {
       await dependencies.createConsole({
-        name,
+        name: consoleName,
         ddl: console.ddl || '',
         type: console.type,
         dataSourceId: resolveConsoleDataSourceId(console.dataSourceName, nameToId),
@@ -130,13 +170,60 @@ export async function runWorkspaceImport(
     }
   }
 
-  return { importedDataSources, importedConsoles, skippedConsoles };
+  return { importedDataSources, importedConsoles, skippedConsoles, skippedDataSources };
+}
+
+/**
+ * Deletes every datasource and every saved console in the workspace. Per-item failures are
+ * skipped so one broken record cannot block clearing the rest.
+ */
+export async function runWorkspaceClear(
+  dependencies: WorkspaceTransferDependencies,
+): Promise<WorkspaceClearResult> {
+  let deletedDataSources = 0;
+  let deletedConsoles = 0;
+
+  const dataSources = await dependencies.listDataSources().catch(() => []);
+  for (const dataSource of dataSources || []) {
+    if (dataSource?.id == null) {
+      continue;
+    }
+    try {
+      await dependencies.deleteDataSource(dataSource.id);
+      deletedDataSources += 1;
+    } catch {
+      // Keep clearing the remaining datasources.
+    }
+  }
+
+  const consoles = await dependencies.listSavedConsoles().catch(() => []);
+  for (const console of consoles || []) {
+    if (console?.id == null) {
+      continue;
+    }
+    try {
+      await dependencies.deleteConsole(console.id);
+      deletedConsoles += 1;
+    } catch {
+      // Keep clearing the remaining consoles.
+    }
+  }
+
+  return { deletedDataSources, deletedConsoles };
 }
 
 /** Production wiring for the workspace transfer. */
 export function createWorkspaceTransferDependencies(): WorkspaceTransferDependencies {
   return {
     exportDataSources: connectionServer.exportDataSource,
+    listDataSources: async () => {
+      const res = await connectionServer.getList({ pageNo: 1, pageSize: 10000 });
+      return (res?.data || []).map((item) => ({
+        id: item.id,
+        alias: item.alias,
+        type: item.type,
+      }));
+    },
     listSavedConsoles: async () => {
       const res = await historyServer.getConsoleList({
         pageNo: 1,
@@ -145,6 +232,7 @@ export function createWorkspaceTransferDependencies(): WorkspaceTransferDependen
         orderByDesc: true,
       });
       return (res?.data || []).map((item) => ({
+        id: item.id,
         name: item.name,
         ddl: item.ddl,
         type: item.type,
@@ -173,19 +261,9 @@ export function createWorkspaceTransferDependencies(): WorkspaceTransferDependen
         databaseName: params.databaseName,
         schemaName: params.schemaName,
       } as never),
+    deleteDataSource: (id) => connectionServer.remove({ id }),
+    deleteConsole: (id) => historyServer.deleteSavedConsole({ id }),
     saveFile: ({ fileName, fileContent, fileType }) => saveFileToDesktop({ fileName, fileContent, fileType }),
     readFileContent: (file) => file.text(),
-    resolveImportedName: (baseName, existingNames, importedNames) => {
-      const fallback = (baseName || '').trim() || 'untitled';
-      const taken = (name: string) => existingNames.has(name) || importedNames.has(name);
-      if (!taken(fallback)) {
-        return fallback;
-      }
-      let suffix = 2;
-      while (taken(`${fallback}(${suffix})`)) {
-        suffix += 1;
-      }
-      return `${fallback}(${suffix})`;
-    },
   };
 }

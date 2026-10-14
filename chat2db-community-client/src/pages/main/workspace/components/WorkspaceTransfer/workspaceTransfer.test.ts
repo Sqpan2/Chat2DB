@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   WORKSPACE_EXPORT_TYPE,
   buildWorkspaceExportFile,
+  dataSourceIdentityKey,
   parseWorkspaceExportFile,
   resolveConsoleDataSourceId,
   WorkspaceImportError,
@@ -76,11 +77,25 @@ function shouldResolveConsoleDataSourceIdByName() {
   assert.equal(resolveConsoleDataSourceId('@test-ajk02', nameToId), 42);
 }
 
+function shouldBuildDedupIdentityKeys() {
+  // Same alias ignoring the legacy "@" prefix and case resolves to the same identity.
+  assert.equal(
+    dataSourceIdentityKey('Test-Ajk02.db.58dns.org', 'MYSQL'),
+    dataSourceIdentityKey('@test-ajk02.db.58dns.org', 'mysql'),
+  );
+  assert.equal(dataSourceIdentityKey(' a ', ' MYSQL '), dataSourceIdentityKey('a', 'mysql'));
+  // Different db type is a different identity.
+  assert.notEqual(dataSourceIdentityKey('a', 'MYSQL'), dataSourceIdentityKey('a', 'ORACLE'));
+  // Empty alias still produces a stable key.
+  assert.equal(dataSourceIdentityKey(undefined, 'MYSQL'), '::mysql');
+}
+
 async function main() {
   shouldBuildAUnifiedExportFile();
   shouldParseAFileExportedByChat2db();
   shouldRejectMalformedContent();
   shouldResolveConsoleDataSourceIdByName();
+  shouldBuildDedupIdentityKeys();
 
   console.log('Workspace transfer tests passed');
 }

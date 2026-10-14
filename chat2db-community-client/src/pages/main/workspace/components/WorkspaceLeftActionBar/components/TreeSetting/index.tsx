@@ -5,17 +5,19 @@ import { IconButton, IconfontSvg } from '@chat2db/ui';
 import { EllipsisVertical } from 'lucide-react';
 import i18n from '@/i18n';
 import { useTreeStore } from '@/store/tree';
+import { useWorkspaceStore } from '@/store/workspace';
 import { exportConnections } from './exportConnections';
-import { exportWorkspace } from '../../../WorkspaceTransfer';
+import { clearWorkspace, exportWorkspace } from '../../../WorkspaceTransfer';
 import { WORKSPACE_TREE_TOOLBAR_SECONDARY_BUTTON_SIZE } from '../../constants';
 
 export default memo(() => {
   const { styles } = useStyles();
 
-  const { userConfigTree, changeUserConfigTree } = useTreeStore((s) => {
+  const { userConfigTree, changeUserConfigTree, refreshTreeData } = useTreeStore((s) => {
     return {
       userConfigTree: s.userConfigTree,
       changeUserConfigTree: s.changeUserConfigTree,
+      refreshTreeData: s.refreshTreeData,
     };
   });
   const schemaSync = useTreeStore((s) => s.schemaSync);
@@ -107,9 +109,24 @@ export default memo(() => {
           void exportWorkspace();
         },
       },
+      {
+        key: 'delete-workspace',
+        icon: <IconfontSvg code="icon-trash" size="lg" />,
+        label: i18n('workspace.menu.deleteWorkspace'),
+        onClick: () => {
+          void clearWorkspace().then((result) => {
+            if (!result) {
+              return;
+            }
+            refreshTreeData().catch(() => undefined);
+            useWorkspaceStore.getState().getSavedConsoleList();
+          });
+        },
+      },
     ];
   }, [
     changeUserConfigTree,
+    refreshTreeData,
     schemaSync,
     userConfigTree.followActiveWorkspaceTab,
     userConfigTree.showComment,

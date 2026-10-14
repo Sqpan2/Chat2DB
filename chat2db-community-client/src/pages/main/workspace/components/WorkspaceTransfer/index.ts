@@ -4,12 +4,15 @@ import { staticMessage } from '@chat2db/ui';
 import { useGlobalStore } from '@/store/global';
 import {
   createWorkspaceTransferDependencies,
+  runWorkspaceClear,
   runWorkspaceExport,
   runWorkspaceImport,
+  type WorkspaceClearResult,
 } from './workspaceTransferFlow';
 import { WorkspaceImportError } from './workspaceTransfer';
 
 const IMPORT_FEEDBACK_KEY = 'import-workspace';
+const CLEAR_FEEDBACK_KEY = 'clear-workspace';
 
 export function exportWorkspace() {
   const run = () => {
@@ -48,13 +51,16 @@ export async function importWorkspace(file: File) {
   });
   try {
     const result = await runWorkspaceImport(file, deps);
-    if (result.skippedConsoles > 0) {
+    const skippedTotal = result.skippedConsoles + result.skippedDataSources;
+    if (result.importedDataSources === 0 && result.importedConsoles === 0 && skippedTotal > 0) {
+      staticMessage.info(i18n('workspace.importWorkspace.allDuplicate', skippedTotal));
+    } else if (skippedTotal > 0) {
       staticMessage.warning(
         i18n(
           'workspace.importWorkspace.partial',
           result.importedDataSources,
           result.importedConsoles,
-          result.skippedConsoles,
+          skippedTotal,
         ),
       );
     } else {
@@ -73,4 +79,37 @@ export async function importWorkspace(file: File) {
   } finally {
     feedback.destroy(IMPORT_FEEDBACK_KEY);
   }
+}
+
+/** Clears every datasource and saved console after an explicit confirmation. */
+export function clearWorkspace(): Promise<WorkspaceClearResult | undefined> {
+  return new Promise((resolve) => {
+    useGlobalStore.getState().openUnifiedConfirmationModal({
+      title: i18n('workspace.menu.deleteWorkspace'),
+      content: i18n('workspace.deleteWorkspace.warning'),
+      headerIconCode: 'icon-exclamation-circle',
+      onOk: async () => {
+        feedback.open({
+          key: CLEAR_FEEDBACK_KEY,
+          type: 'loading',
+          content: i18n('workspace.deleteWorkspace.clearing'),
+          duration: 0,
+        });
+        try {
+          const deps = createWorkspaceTransferDependencies();
+          const result = await runWorkspaceClear(deps);
+          staticMessage.success(
+            i18n('workspace.deleteWorkspace.success', result.deletedDataSources, result.deletedConsoles),
+          );
+          resolve(result);
+        } catch {
+          staticMessage.error(i18n('workspace.deleteWorkspace.failed'));
+          resolve(undefined);
+        } finally {
+          feedback.destroy(CLEAR_FEEDBACK_KEY);
+        }
+      },
+      onCancel: () => resolve(undefined),
+    });
+  });
 }

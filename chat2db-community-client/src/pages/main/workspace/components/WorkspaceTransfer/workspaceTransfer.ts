@@ -149,3 +149,9 @@ export function resolveConsoleDataSourceId(
   const normalized = dataSourceName.startsWith('@') ? dataSourceName.slice(1) : dataSourceName;
   return normalized === dataSourceName ? undefined : nameToId.get(normalized);
 }
+
+/** Datasource identity for dedup: alias ignoring the legacy "@" prefix, paired with the db type. */
+export function dataSourceIdentityKey(alias: string | undefined, type: string | undefined): string {
+  const normalizedAlias = (alias || '').trim().replace(/^@/, '').toLowerCase();
+  return `${normalizedAlias}::${(type || '').trim().toLowerCase()}`;
+}
