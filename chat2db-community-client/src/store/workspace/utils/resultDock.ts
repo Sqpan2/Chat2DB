@@ -8,6 +8,9 @@ export type WorkspaceResultDockSize = number | string;
 /** The dock never hides more than this share of the workspace. */
 export const RESULT_DOCK_MAX_HEIGHT_RATIO = 0.8;
 
+/** Default height the result dock lifts to when a query returns its first results. */
+export const DEFAULT_WORKSPACE_RESULT_DOCK_HEIGHT = '33.33%';
+
 /** The editor band above the dock always keeps this much room. */
 export const RESULT_DOCK_MIN_TOP_BAND_HEIGHT = 120;
 

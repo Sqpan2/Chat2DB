@@ -37,7 +37,7 @@ import {
   subscribeResultTabKeepHistory,
 } from '@/blocks/SearchResult/resultTabPreferences';
 import { useWorkspaceStore } from '@/store/workspace';
-import { shouldUseWorkspaceResultDock } from '@/store/workspace/utils/resultDock';
+import { shouldUseWorkspaceResultDock, DEFAULT_WORKSPACE_RESULT_DOCK_HEIGHT } from '@/store/workspace/utils/resultDock';
 import { useResultDockSlot } from './useResultDockSlot';
 import { useTreeStore } from '@/store/tree';
 import {
@@ -889,7 +889,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     }
     autoOpenedResultSignatureRef.current = signature;
     if (!boxRightConsoleHeight) {
-      setBoxRightConsoleHeight('50%');
+      setBoxRightConsoleHeight(DEFAULT_WORKSPACE_RESULT_DOCK_HEIGHT);
     }
   }, [resultDataList, boxRightConsoleHeight, setBoxRightConsoleHeight]);
 
@@ -977,7 +977,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
   }, []);
 
   const handleUnfold = () => {
-    setBoxRightConsoleHeight('50%');
+    setBoxRightConsoleHeight(DEFAULT_WORKSPACE_RESULT_DOCK_HEIGHT);
   };
 
   const handlePackUp = () => {
@@ -1065,7 +1065,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     }
 
     if (!boxRightConsoleHeight) {
-      setBoxRightConsoleHeight('50%');
+      setBoxRightConsoleHeight(DEFAULT_WORKSPACE_RESULT_DOCK_HEIGHT);
     }
     const { executionSequence, displayBatchSequence, keepExistingOutput } = beginExecutionBatch({
       keepOutputHistory: keepExecutionLogHistory,
