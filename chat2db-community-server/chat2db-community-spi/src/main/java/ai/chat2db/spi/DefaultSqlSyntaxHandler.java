@@ -189,11 +189,29 @@ public class DefaultSqlSyntaxHandler {
         if (Objects.isNull(sqlSyntaxPlugin)) {
             return SqlCompletionResponse.unsupported(databaseType);
         }
+        // Dialects of the MySQL protocol family (TiDB, Doris, StarRocks, MariaDB,
+        // OceanBase, ...) share MySQL's grammar but their own syntax plugins do not
+        // override getSqlCompletionProvider(), so the default "unsupported" provider
+        // is returned and keyword/snippet completion silently disappears. Reuse the
+        // MySQL completion provider for them, mirroring the MySQL fallback already
+        // applied in getSQLParser().
         ISqlCompletionProvider completionProvider = sqlSyntaxPlugin.getSqlCompletionProvider();
+        if (isMysqlProtocolFamily(databaseType)
+                && !StringUtils.equalsIgnoreCase(DatabaseTypeEnum.MYSQL.name(), databaseType)) {
+            ISqlSyntaxPlugin mysqlPlugin = sqlSyntaxPluginMap.get(DatabaseTypeEnum.MYSQL.name());
+            if (mysqlPlugin != null) {
+                completionProvider = mysqlPlugin.getSqlCompletionProvider();
+            }
+        }
         if (Objects.isNull(completionProvider)) {
             return SqlCompletionResponse.unsupported(databaseType);
         }
         return completionProvider.complete(request);
+    }
+
+    private static boolean isMysqlProtocolFamily(String databaseType) {
+        DatabaseTypeEnum databaseTypeEnum = DatabaseTypeEnum.from(databaseType);
+        return databaseTypeEnum != null && databaseTypeEnum.isMysqlProtocolFamily();
     }
 
     public static List<SqlCompletionEditorHint> editorHints(DbSqlCompletionRequest request) {

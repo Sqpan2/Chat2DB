@@ -33,14 +33,26 @@ class DefaultSqlSyntaxHandlerCompletionTest {
 
     private final Map<String, ISqlSyntaxPlugin> pluginMap = pluginMap();
     private final ISqlSyntaxPlugin previousPostgresqlPlugin = pluginMap.get(DatabaseTypeEnum.POSTGRESQL.name());
+    private final ISqlSyntaxPlugin previousMysqlPlugin = pluginMap.get(DatabaseTypeEnum.MYSQL.name());
+    private final ISqlSyntaxPlugin previousTidbPlugin = pluginMap.get(DatabaseTypeEnum.TIDB.name());
 
     @AfterEach
     void restorePluginMap() {
         if (previousPostgresqlPlugin == null) {
             pluginMap.remove(DatabaseTypeEnum.POSTGRESQL.name());
-            return;
+        } else {
+            pluginMap.put(DatabaseTypeEnum.POSTGRESQL.name(), previousPostgresqlPlugin);
         }
-        pluginMap.put(DatabaseTypeEnum.POSTGRESQL.name(), previousPostgresqlPlugin);
+        if (previousMysqlPlugin == null) {
+            pluginMap.remove(DatabaseTypeEnum.MYSQL.name());
+        } else {
+            pluginMap.put(DatabaseTypeEnum.MYSQL.name(), previousMysqlPlugin);
+        }
+        if (previousTidbPlugin == null) {
+            pluginMap.remove(DatabaseTypeEnum.TIDB.name());
+        } else {
+            pluginMap.put(DatabaseTypeEnum.TIDB.name(), previousTidbPlugin);
+        }
     }
 
     @Test
@@ -95,6 +107,43 @@ class DefaultSqlSyntaxHandlerCompletionTest {
         Assertions.assertEquals("sql.completion.unsupported.POSTGRESQL", result.getReasonCode());
     }
 
+    @Test
+    void completeFallsBackToMysqlProviderForMysqlProtocolFamilyDialect() {
+        CountingCompletionProvider mysqlProvider = new CountingCompletionProvider();
+        pluginMap.put(DatabaseTypeEnum.MYSQL.name(),
+                new FakeSyntaxPlugin(DatabaseTypeEnum.MYSQL.name(), mysqlProvider));
+        pluginMap.put(DatabaseTypeEnum.TIDB.name(), new DefaultCompletionSyntaxPlugin(DatabaseTypeEnum.TIDB.name()));
+
+        DbSqlCompletionRequest request = DbSqlCompletionRequest.of(
+                "select * from app_user where na",
+                31,
+                DatabaseTypeEnum.TIDB.name(),
+                1,
+                null);
+
+        SqlCompletionResponse result = DefaultSqlSyntaxHandler.complete(request);
+
+        Assertions.assertEquals(1, mysqlProvider.callCount);
+        Assertions.assertEquals(SqlCompletionStatusEnum.SUCCESS.name(), result.getStatus());
+        Assertions.assertEquals("name", result.getCandidates().get(0).getLabel());
+    }
+
+    @Test
+    void completeKeepsNonMysqlFamilyDialectOnItsOwnDefaultProvider() {
+        pluginMap.put(DatabaseTypeEnum.POSTGRESQL.name(), new DefaultCompletionSyntaxPlugin());
+        DbSqlCompletionRequest request = DbSqlCompletionRequest.of(
+                "select * from app_user",
+                8,
+                DatabaseTypeEnum.POSTGRESQL.name(),
+                1,
+                null);
+
+        SqlCompletionResponse result = DefaultSqlSyntaxHandler.complete(request);
+
+        Assertions.assertEquals(SqlCompletionStatusEnum.UNSUPPORTED.name(), result.getStatus());
+        Assertions.assertEquals("sql.completion.unsupported.POSTGRESQL", result.getReasonCode());
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, ISqlSyntaxPlugin> pluginMap() {
         try {
@@ -123,15 +172,21 @@ class DefaultSqlSyntaxHandlerCompletionTest {
 
     private static final class FakeSyntaxPlugin implements ISqlSyntaxPlugin {
 
+        private final String databaseType;
         private final ISqlCompletionProvider completionProvider;
 
         private FakeSyntaxPlugin(ISqlCompletionProvider completionProvider) {
+            this(DatabaseTypeEnum.POSTGRESQL.name(), completionProvider);
+        }
+
+        private FakeSyntaxPlugin(String databaseType, ISqlCompletionProvider completionProvider) {
+            this.databaseType = databaseType;
             this.completionProvider = completionProvider;
         }
 
         @Override
         public String getDatabaseType() {
-            return DatabaseTypeEnum.POSTGRESQL.name();
+            return databaseType;
         }
 
         @Override
@@ -147,9 +202,19 @@ class DefaultSqlSyntaxHandlerCompletionTest {
 
     private static final class DefaultCompletionSyntaxPlugin implements ISqlSyntaxPlugin {
 
+        private final String databaseType;
+
+        private DefaultCompletionSyntaxPlugin() {
+            this(DatabaseTypeEnum.POSTGRESQL.name());
+        }
+
+        private DefaultCompletionSyntaxPlugin(String databaseType) {
+            this.databaseType = databaseType;
+        }
+
         @Override
         public String getDatabaseType() {
-            return DatabaseTypeEnum.POSTGRESQL.name();
+            return databaseType;
         }
 
         @Override

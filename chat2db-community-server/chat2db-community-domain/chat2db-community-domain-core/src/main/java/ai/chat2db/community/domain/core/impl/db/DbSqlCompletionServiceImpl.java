@@ -42,7 +42,14 @@ public class DbSqlCompletionServiceImpl implements IDbSqlCompletionService {
             SqlCompletionMetadataProviderAdapter metadataProvider = new SqlCompletionMetadataProviderAdapter(
                     buildMetadataContext(param, dbConfig, metaData), sqlCompletionConverter);
             DbSqlCompletionRequest request = buildCompletionRequest(param, dbConfig, metadataProvider);
-            if (StringUtils.equalsIgnoreCase(DatabaseTypeEnum.MYSQL.name(), dbConfig.getDbType())) {
+            // The keyword/snippet completion engine is not MySQL-only: every datasource in the
+            // MySQL protocol family (MySQL, MariaDB, TiDB, StarRocks, Doris, OceanBase) shares the
+            // same syntax plugin and must go through DefaultSqlSyntaxHandler, which produces the
+            // KEYWORD candidates. Routing only the exact MYSQL type here left TiDB/Doris/etc. on the
+            // generic metadata-only engine, so typing "ORDER" (or any keyword) surfaced only table
+            // names and never "ORDER BY".
+            DatabaseTypeEnum databaseType = DatabaseTypeEnum.from(dbConfig.getDbType());
+            if (databaseType != null && databaseType.isMysqlProtocolFamily()) {
                 return DefaultSqlSyntaxHandler.complete(request);
             }
             SqlCompletionResponse response = genericSqlCompletionService.complete(param);
