@@ -330,6 +330,25 @@ const MonacoSQLEditor = forwardRef<MonacoEditorRef, MonacoSQLEditorProps>(
         return;
       }
       const handleDoubleClick = () => {
+        // Double-clicking a line (or trailing whitespace) leaves the caret on the
+        // first column of the NEXT line instead of the end of the selected line.
+        // Pull the caret back to the end of the selected line while keeping the
+        // selection intact. Word selections (endColumn > 1) are left untouched.
+        const model = editor.getModel();
+        const selection = editor.getSelection();
+        if (model && selection && !selection.isEmpty() && selection.endColumn === 1) {
+          const selectedLine = selection.endLineNumber - 1;
+          if (selectedLine >= selection.startLineNumber) {
+            editor.setSelection(
+              new monaco.Selection(
+                selection.selectionStartLineNumber,
+                selection.selectionStartColumn,
+                selectedLine,
+                model.getLineMaxColumn(selectedLine),
+              ),
+            );
+          }
+        }
         onEditorDoubleClickRef.current?.(editor);
       };
       domNode.addEventListener('dblclick', handleDoubleClick);
