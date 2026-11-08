@@ -527,10 +527,12 @@ const SQLEditor = forwardRef<SQLEditorRef, SQLEditorProps>(
       }
 
       // Double clicking a table name locates it in the object tree and expands its columns.
+      // Do NOT preventDefault here: cancelling the native mousedown breaks Monaco's
+      // double-click word selection, leaving the caret on the next line instead of the
+      // end of the selected word/line.
       if (e.event.detail === 2 && e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT) {
         const tableIdentifier = getTableIdentifierAtPosition(e.target.position);
         if (tableIdentifier) {
-          e.event.preventDefault();
           action(SQLOptType.LOCATE_TABLE_IN_TREE, tableIdentifier);
         }
       }
